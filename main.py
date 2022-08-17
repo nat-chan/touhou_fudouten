@@ -1,0 +1,279 @@
+# %%
+import pygame
+from pygame.locals import *
+from typing import NamedTuple
+import sys
+import colorsys
+from addict import Dict
+from itertools import count
+import numpy as np
+import math
+
+DISPLAY_RECT = pygame.Rect(0, 0, 1280, 960) #画面全体長方形
+BOX_RECT = pygame.Rect(62, 30, 834-62, 930-30)
+
+SMALL_RECT = pygame.Rect(0, 0, 386, 450)
+
+class MyDict(dict):
+    def at(self, k):
+        return self[list(self.keys())[k]]
+
+params = MyDict(
+    はっぱや=np.array([+0.7+0.2j, +0.0 +0.0j, +0.0+0.0j, +0.65+0.0j]),
+    さんかく=np.array([+0.0+0.0j, +0.45+0.5j, +0.0+0.0j, +0.45-0.5j]), 
+    くるくる=np.array([0.4614+0.4614j,0,0.622-0.196j,0]),
+    たちきの=np.array([0,0.3+0.3j,0,41/50]),
+    ひしがた=np.array([0,0.5+0.5j,0,-0.5+0.5j]),
+    かいそう=np.array([0.4614+0.4614j,0,0,0.2896-0.585j]),
+)
+
+def f1(z, a, b):
+    return a*z + b*z.conjugate()
+
+def f2(z, c, d):
+    return c*(z-1) + d*(z.conjugate()-1) + 1
+
+def hata(zs, p):
+    ret = list()
+    for z in zs:
+        ret += [f1(z, p[0], p[1]), f2(z, p[2], p[3])]
+    return ret
+
+def z2xy(z):
+    scale = min(SMALL_RECT.width, SMALL_RECT.height)/2
+    x = z.real*scale+SMALL_RECT.width/2
+    y = -z.imag*scale+SMALL_RECT.height/2
+    return (int(x), int(y))
+
+def hatamain(screen, p, N=9, z=1+0j):
+    zs = [z]
+    T = 2**(N+1)-2
+    t = 0
+    for n in range(N):
+        zs = hata(zs, p)
+        for z in zs:
+            rgb = hsv2rgb(t/T, 1, 1)
+            xy = z2xy(z)
+#            screen.set_at(xy, rgb)
+            pygame.draw.circle(screen, rgb, xy, 1)
+            t += 1
+
+def fast(p, z=np.array([[1, 1, 1]])):
+    A0 = [np.array([
+        [ p[0].real+p[1].real, p[0].imag+p[1].imag, 0],    
+        [-p[0].imag+p[1].imag, p[0].real-p[1].real, 0],
+        [0                  ,  0                  , 1]
+    ]), np.array([
+        [ p[2].real+p[3].real  ,  p[2].imag+p[3].imag, 0],
+        [-p[2].imag+p[3].imag  ,  p[2].real-p[3].real, 0],
+        [-p[2].real-p[3].real+1, -p[2].imag-p[3].imag, 1]
+    ])]
+    A1 = [A0[i&1]@A0[(i>>1)&1] for i in range(4)]
+    A = np.hstack([A1[i&3]@A1[(i>>2)&3] for i in range(16)])
+    z = (z@A).reshape(-1, 3)
+    z = (z@A).reshape(-1, 3)
+#    z = (z@A).reshape(-1, 3)
+    return z[:, :-1]
+
+def fastz2xy(z):
+    scale = min(SMALL_RECT.width, SMALL_RECT.height)/2
+    x = z[0]*scale+SMALL_RECT.width/2
+    y = -z[1]*scale+SMALL_RECT.height/2
+    return (int(x), int(y))
+
+def hatafast(screen, p):
+    zs = fast(p)
+    for i, z in enumerate(zs):
+        rgb = hsv2rgb(i/len(zs), 1, 1)
+        xy = fastz2xy(z)
+        for X in [-220, 0, 220]:
+            for Y in range(-140, 300, 110):
+                _xy = (xy[0]+X, xy[1]+Y)
+                pygame.draw.circle(screen, rgb, _xy, 2)
+
+
+def hsv2rgb(h,s,v):
+    return tuple(round(i*255) for i in colorsys.hsv_to_rgb(h,s,v))
+
+class Status:
+    def __init__(self):
+        self.now= False
+        self.last = [-60*60*60, -60*60*60] # 1時間前から定常状態
+
+KEY = ["left", "right", "up", "down", "slow", "shot", "bomb"]
+class Reimu:
+    def __init__(self):
+        self.pl00 = pygame.image.load("touhouSE/data/player/pl00/pl00.png")
+        self.pos = np.array((80, 60))
+
+        self.option = pygame.Surface((16, 16), pygame.SRCALPHA)
+        self.option.blit(self.pl00, (0, 0), (3*32, 3*48, 16, 16))
+        self.sloweffect = pygame.Surface((64, 64), pygame.SRCALPHA)
+        self.sloweffect.blit(pygame.image.load("touhouSE/data/effect/eff_sloweffect(1).png"), (0, 0), (0,0, 64, 64))
+        self.eff_charge = pygame.Surface((32, 32), pygame.SRCALPHA)
+        self.eff_charge.blit(pygame.image.load("touhouSE/data/effect/eff_charge.png"), (0, 0), (0,0, 64, 64))
+
+        self.s = Dict({k:Status() for k in KEY})
+
+    def update(self, t, cont):
+        for k in KEY:
+            if self.s[k].now^cont[k]:
+                self.s[k].last[cont[k]] = t
+                self.s[k].now = cont[k]
+        speed = [4.0, 2.0][cont.slow]
+        if [cont.left, cont.right, cont.up, cont.down].count(True) == 2:
+            speed /= math.sqrt(2)
+
+        if cont.left:
+            self.pos[0] -= speed
+        elif cont.right:
+            self.pos[0] += speed
+
+        if cont.up:
+            self.pos[1] -= speed
+        elif cont.down:
+            self.pos[1] += speed
+
+    def draw(self, t, screen):
+        if self.s.left.now:
+            screen.blit(self.pl00, self.pos-(16, 24), (0+32*(t//8%4), 1*48, 32, 48))
+        elif self.s.right.now:
+            screen.blit(self.pl00, self.pos-(16, 24), (0+32*(t//8%4), 2*48, 32, 48))
+        else:
+            screen.blit(self.pl00, self.pos-(16, 24), (0+32*(t//8%4), 0*48, 32, 48))
+
+        angle_option = -t*6%360
+        d = calc_d(angle_option)
+        rot_option = pygame.transform.rotate(self.option, angle_option)
+
+        angle_sloweffect = t*3%360
+        d2 = calc_d(angle_sloweffect)
+        rot_sloweffect = pygame.transform.rotate(self.sloweffect, angle_sloweffect)
+        rot_sloweffect2 = pygame.transform.rotate(self.sloweffect, -angle_sloweffect)
+
+        option_pos_lower = np.array([[+16, 32], [-16, 32], [+38, 16], [-38, 16]])
+        option_pos_upper = np.array([[+8, -30], [-8, -30], [+24, -20], [-24, -20]])
+        option_move = 4
+        dt = (t-self.s.slow.last[self.s.slow.now])/option_move
+        if 0 <= dt < 1:
+            if self.s.slow.now:
+                option_pos = dt*option_pos_upper+(1-dt)*option_pos_lower
+            else:
+                option_pos = dt*option_pos_lower+(1-dt)*option_pos_upper
+        else:
+            if self.s.slow.now:
+                option_pos = option_pos_upper
+            else:
+                option_pos = option_pos_lower
+
+        for o in option_pos:
+            screen.blit(self.eff_charge, self.pos-(16,16)+o, (0, 0, *self.eff_charge.get_size()))
+            screen.blit(rot_option, self.pos-(8*d, 8*d)+o, (0, 0, *rot_option.get_size()))
+
+        if self.s.slow.now:
+            screen.blit(rot_sloweffect, self.pos-(32*d2, 32*d2), (0, 0, *rot_sloweffect.get_size()))
+            screen.blit(rot_sloweffect2, self.pos-(32*d2, 32*d2), (0, 0, *rot_sloweffect.get_size()))
+#        pygame.draw.circle(screen, (0, 0, 255), self.pos, 2)
+
+def calc_d(angle):
+    return math.cos(angle%90/360*2*math.pi)+math.sin(angle%90/360*2*math.pi)
+
+def check_input(joystick):
+    axis0 = joystick.get_axis(0)
+    axis1 = joystick.get_axis(1)
+    return Dict(
+        left =axis0 < -0.5,
+        right=axis0 > +0.5,
+        up   =axis1 < -0.5,
+        down =axis1 > +0.5,
+        slow =bool(joystick.get_button(7)),
+        bomb =bool(joystick.get_button(3)),
+        shot =bool(joystick.get_button(2)),
+    )
+
+class MyController:
+    def __init__(self):
+        pass
+    def check_input(self):
+        keys = pygame.key.get_pressed()
+        return Dict(
+            left =keys[pygame.K_LEFT],
+            right=keys[pygame.K_RIGHT],
+            up   =keys[pygame.K_UP],
+            down =keys[pygame.K_DOWN],
+            slow =keys[pygame.K_LSHIFT],
+            bomb =keys[pygame.K_x],
+            shot =keys[pygame.K_z],
+        )
+
+
+class StepGame:
+    def __init__(self, screen, controller, clock) -> None:
+        self.screen = screen
+        self.controller = controller
+        self.clock = clock
+        self.screen2 = pygame.Surface((SMALL_RECT.width, SMALL_RECT.height))
+        #font = pygame.font.SysFont(None, 40)
+        #pygame.font.get_fonts()で確認、ttfのフルパス指定
+        self.font = pygame.font.SysFont('yumincho', 40)
+        self.reimu = Reimu()
+
+    def play(self, t) -> None:
+        T = 100
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit(); sys.exit()
+        cont = self.controller.check_input()
+
+        self.screen.fill((0,0,0))
+        self.screen2.fill((30,30,30))
+        # テキスト描画処理
+        self.screen.blit(
+            self.font.render(f"fps:{self.clock.get_fps():.2f}", True, (255, 255, 255)),
+            (DISPLAY_RECT.right-160, DISPLAY_RECT.bottom-50)
+        )
+        self.screen.blit(
+            self.font.render("Player: ♡×0", True, (255, 255, 255)),
+            (DISPLAY_RECT.right-400, DISPLAY_RECT.top+100)
+        )
+        self.screen.blit(
+            self.font.render(f"Bomb: ☆×{3}", True, (255, 255, 255)),
+            (DISPLAY_RECT.right-400, DISPLAY_RECT.top+150)
+        )
+        self.screen.blit(
+            self.font.render(f"東方不動点", True, (255, 255, 255)),
+            (DISPLAY_RECT.right-400, DISPLAY_RECT.bottom-150)
+        )
+
+        p = params.at((t//T)%len(params))
+        q = params.at((t//T+1)%len(params))
+        r = (1-t%T/T)*p+t%T/T*q
+
+        hatafast(self.screen2, r)
+
+        self.reimu.update(t, cont)
+        self.reimu.draw(t, self.screen2)
+
+        self.screen.blit(
+            pygame.transform.scale(self.screen2, (SMALL_RECT.width*2, SMALL_RECT.height*2)),
+            (BOX_RECT.left, BOX_RECT.top)
+        )
+        pygame.draw.rect(self.screen, (0,255,0), BOX_RECT, 2)
+
+
+
+def main():
+    pygame.init()
+    pygame.display.set_caption("東方不動点")
+    screen = pygame.display.set_mode((DISPLAY_RECT.width, DISPLAY_RECT.height))
+    controller = MyController()
+    clock = pygame.time.Clock()
+    step_game = StepGame(screen, controller, clock)
+    for t in count():
+        step_game.play(t)
+        clock.tick(60)
+        pygame.display.update()
+
+
+if __name__ == "__main__":
+    main()
