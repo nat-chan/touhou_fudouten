@@ -9,7 +9,7 @@ from itertools import count
 import numpy as np
 import math
 
-DISPLAY_RECT = pygame.Rect(0, 0, 1280, 960) #画面全体長方形
+DISPLAY_RECT = pygame.Rect(0, 0, 1280, 960)
 BOX_RECT = pygame.Rect(62, 30, 834-62, 930-30)
 
 SMALL_RECT = pygame.Rect(0, 0, 386, 450)
@@ -27,38 +27,8 @@ params = MyDict(
     かいそう=np.array([0.4614+0.4614j,0,0,0.2896-0.585j]),
 )
 
-def f1(z, a, b):
-    return a*z + b*z.conjugate()
-
-def f2(z, c, d):
-    return c*(z-1) + d*(z.conjugate()-1) + 1
-
-def hata(zs, p):
-    ret = list()
-    for z in zs:
-        ret += [f1(z, p[0], p[1]), f2(z, p[2], p[3])]
-    return ret
-
-def z2xy(z):
-    scale = min(SMALL_RECT.width, SMALL_RECT.height)/2
-    x = z.real*scale+SMALL_RECT.width/2
-    y = -z.imag*scale+SMALL_RECT.height/2
-    return (int(x), int(y))
-
-def hatamain(screen, p, N=9, z=1+0j):
-    zs = [z]
-    T = 2**(N+1)-2
-    t = 0
-    for n in range(N):
-        zs = hata(zs, p)
-        for z in zs:
-            rgb = hsv2rgb(t/T, 1, 1)
-            xy = z2xy(z)
-#            screen.set_at(xy, rgb)
-            pygame.draw.circle(screen, rgb, xy, 1)
-            t += 1
-
 def fast(p, z=np.array([[1, 1, 1]])):
+    """畑写像を高速に計算"""
     A0 = [np.array([
         [ p[0].real+p[1].real, p[0].imag+p[1].imag, 0],    
         [-p[0].imag+p[1].imag, p[0].real-p[1].real, 0],
@@ -72,20 +42,21 @@ def fast(p, z=np.array([[1, 1, 1]])):
     A = np.hstack([A1[i&3]@A1[(i>>2)&3] for i in range(16)])
     z = (z@A).reshape(-1, 3)
     z = (z@A).reshape(-1, 3)
-#    z = (z@A).reshape(-1, 3)
     return z[:, :-1]
 
-def fastz2xy(z):
+def z2xy(z):
+    """画面に収まる位置に座標をスケール"""
     scale = min(SMALL_RECT.width, SMALL_RECT.height)/2
     x = z[0]*scale+SMALL_RECT.width/2
     y = -z[1]*scale+SMALL_RECT.height/2
     return (int(x), int(y))
 
 def hatafast(screen, p):
+    """畑写像に関する実際の描画処理"""
     zs = fast(p)
     for i, z in enumerate(zs):
         rgb = hsv2rgb(i/len(zs), 1, 1)
-        xy = fastz2xy(z)
+        xy = z2xy(z)
         for X in [-220, 0, 220]:
             for Y in range(-140, 300, 110):
                 _xy = (xy[0]+X, xy[1]+Y)
@@ -96,42 +67,42 @@ def hsv2rgb(h,s,v):
     return tuple(round(i*255) for i in colorsys.hsv_to_rgb(h,s,v))
 
 class Status:
+    KEY = ["left", "right", "up", "down", "slow", "shot", "bomb"]
     def __init__(self):
         self.now= False
         self.last = [-60*60*60, -60*60*60] # 1時間前から定常状態
 
-KEY = ["left", "right", "up", "down", "slow", "shot", "bomb"]
 class Reimu:
     def __init__(self):
-        self.pl00 = pygame.image.load("touhouSE/data/player/pl00/pl00.png")
+        self.pl00 = pygame.image.load("data/pl00.png")
         self.pos = np.array((80, 60))
 
         self.option = pygame.Surface((16, 16), pygame.SRCALPHA)
         self.option.blit(self.pl00, (0, 0), (3*32, 3*48, 16, 16))
         self.sloweffect = pygame.Surface((64, 64), pygame.SRCALPHA)
-        self.sloweffect.blit(pygame.image.load("touhouSE/data/effect/eff_sloweffect(1).png"), (0, 0), (0,0, 64, 64))
+        self.sloweffect.blit(pygame.image.load("data/eff_sloweffect.png"), (0, 0), (0,0, 64, 64))
         self.eff_charge = pygame.Surface((32, 32), pygame.SRCALPHA)
-        self.eff_charge.blit(pygame.image.load("touhouSE/data/effect/eff_charge.png"), (0, 0), (0,0, 64, 64))
+        self.eff_charge.blit(pygame.image.load("data/eff_charge.png"), (0, 0), (0,0, 64, 64))
 
-        self.s = Dict({k:Status() for k in KEY})
+        self.s = Dict({k:Status() for k in Status.KEY})
 
-    def update(self, t, cont):
-        for k in KEY:
-            if self.s[k].now^cont[k]:
-                self.s[k].last[cont[k]] = t
-                self.s[k].now = cont[k]
-        speed = [4.0, 2.0][cont.slow]
-        if [cont.left, cont.right, cont.up, cont.down].count(True) == 2:
+    def update(self, t, controller_input):
+        for k in Status.KEY:
+            if self.s[k].now^controller_input[k]:
+                self.s[k].last[controller_input[k]] = t
+                self.s[k].now = controller_input[k]
+        speed = [4.0, 2.0][controller_input.slow]
+        if [controller_input.left, controller_input.right, controller_input.up, controller_input.down].count(True) == 2:
             speed /= math.sqrt(2)
 
-        if cont.left:
+        if controller_input.left:
             self.pos[0] -= speed
-        elif cont.right:
+        elif controller_input.right:
             self.pos[0] += speed
 
-        if cont.up:
+        if controller_input.up:
             self.pos[1] -= speed
-        elif cont.down:
+        elif controller_input.down:
             self.pos[1] += speed
 
     def draw(self, t, screen):
@@ -204,13 +175,13 @@ class MyController:
             slow =keys[pygame.K_LSHIFT],
             bomb =keys[pygame.K_x],
             shot =keys[pygame.K_z],
+            esc  =keys[pygame.K_ESCAPE],
         )
 
 
-class StepGame:
-    def __init__(self, screen, controller, clock) -> None:
+class GameStep:
+    def __init__(self, screen, clock) -> None:
         self.screen = screen
-        self.controller = controller
         self.clock = clock
         self.screen2 = pygame.Surface((SMALL_RECT.width, SMALL_RECT.height))
         #font = pygame.font.SysFont(None, 40)
@@ -218,13 +189,8 @@ class StepGame:
         self.font = pygame.font.SysFont('yumincho', 40)
         self.reimu = Reimu()
 
-    def play(self, t) -> None:
+    def play(self, t, controller_input) -> None:
         T = 100
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit(); sys.exit()
-        cont = self.controller.check_input()
-
         self.screen.fill((0,0,0))
         self.screen2.fill((30,30,30))
         # テキスト描画処理
@@ -251,7 +217,7 @@ class StepGame:
 
         hatafast(self.screen2, r)
 
-        self.reimu.update(t, cont)
+        self.reimu.update(t, controller_input)
         self.reimu.draw(t, self.screen2)
 
         self.screen.blit(
@@ -268,11 +234,21 @@ def main():
     screen = pygame.display.set_mode((DISPLAY_RECT.width, DISPLAY_RECT.height))
     controller = MyController()
     clock = pygame.time.Clock()
-    step_game = StepGame(screen, controller, clock)
-    for t in count():
-        step_game.play(t)
+    game_step = GameStep(screen, clock)
+    t = 0
+    while True:
+        controller_input = controller.check_input()
+        game_step.play(t, controller_input)
         clock.tick(60)
         pygame.display.update()
+
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit(); sys.exit()
+        if controller_input.esc:
+            t = 0
+        t += 1
+
 
 
 if __name__ == "__main__":
