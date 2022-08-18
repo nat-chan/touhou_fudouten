@@ -11,7 +11,7 @@ import math
 
 DISPLAY_RECT = pygame.Rect(0, 0, 1280, 960)
 BORDER_RECT = pygame.Rect(62, 30, 834-62, 930-30)
-PLAYABLE_RECT = pygame.Rect(0, 0, 2*386, 2*450)
+PLAYAREA_RECT = pygame.Rect(0, 0, 2*386, 2*450)
 INFO_RECT = pygame.Rect(834+30, 30, 1280-834-2*30, 500)
 
 class MyDict(dict):
@@ -46,9 +46,9 @@ def fast(p, z=np.array([[1, 1, 1]])):
 
 def z2xy(z):
     """画面に収まる位置に座標をスケール"""
-    scale = min(PLAYABLE_RECT.width, PLAYABLE_RECT.height)/2
-    x = z[0]*scale+PLAYABLE_RECT.width/2
-    y = -z[1]*scale+PLAYABLE_RECT.height/2
+    scale = min(PLAYAREA_RECT.width, PLAYAREA_RECT.height)/2
+    x = z[0]*scale+PLAYAREA_RECT.width/2
+    y = -z[1]*scale+PLAYAREA_RECT.height/2
     return (int(x), int(y))
 
 def hsv2rgb(h,s,v):
@@ -66,8 +66,8 @@ def hatafast(p):
         for x in X:
             for y in Y:
                 _xy = (xy[0]+x, xy[1]+y)
-                if ( PLAYABLE_RECT.left < _xy[0] < PLAYABLE_RECT.right and
-                     PLAYABLE_RECT.top < _xy[1] < PLAYABLE_RECT.bottom 
+                if ( PLAYAREA_RECT.left < _xy[0] < PLAYAREA_RECT.right and
+                     PLAYAREA_RECT.top < _xy[1] < PLAYAREA_RECT.bottom 
                 ):
                     retval.append(SmallCircleBullet(_xy, rgb))
     return retval
@@ -132,10 +132,10 @@ class Reimu:
         
         # 画面外脱出防止
         mergin = 40
-        if self.pos[0] < PLAYABLE_RECT.left+mergin: self.pos[0] = PLAYABLE_RECT.left+mergin
-        if self.pos[0] > PLAYABLE_RECT.right-mergin: self.pos[0] = PLAYABLE_RECT.right-mergin
-        if self.pos[1] < PLAYABLE_RECT.top+mergin: self.pos[1] = PLAYABLE_RECT.top+mergin
-        if self.pos[1] > PLAYABLE_RECT.bottom-mergin: self.pos[1] = PLAYABLE_RECT.bottom-mergin
+        if self.pos[0] < PLAYAREA_RECT.left+mergin: self.pos[0] = PLAYAREA_RECT.left+mergin
+        if self.pos[0] > PLAYAREA_RECT.right-mergin: self.pos[0] = PLAYAREA_RECT.right-mergin
+        if self.pos[1] < PLAYAREA_RECT.top+mergin: self.pos[1] = PLAYAREA_RECT.top+mergin
+        if self.pos[1] > PLAYAREA_RECT.bottom-mergin: self.pos[1] = PLAYAREA_RECT.bottom-mergin
 
         # ボムの処理
         if ( self.s["bomb"].now and not self.bomb_invincible 
@@ -174,7 +174,6 @@ class Reimu:
             hit_radius = self.hit_invincible_time*(1-(t-self.hit_lasttime)/self.hit_invincible_time)
             pygame.draw.circle(screen, (0, 0, 255), self.pos, hit_radius, 2)
 
-
         angle_option = -t*6%360
         d = 2*calc_d(angle_option)
         rot_option = pygame.transform.rotate(self.option, angle_option)
@@ -209,20 +208,8 @@ class Reimu:
 #        pygame.draw.circle(screen, (0, 0, 255), self.pos, 2)
 
 def calc_d(angle):
+    """32x32等の円形スプライトを回転させる時の中心からのズレ"""
     return math.cos(angle%90/360*2*math.pi)+math.sin(angle%90/360*2*math.pi)
-
-def check_input(joystick):
-    axis0 = joystick.get_axis(0)
-    axis1 = joystick.get_axis(1)
-    return Dict(
-        left =axis0 < -0.5,
-        right=axis0 > +0.5,
-        up   =axis1 < -0.5,
-        down =axis1 > +0.5,
-        slow =bool(joystick.get_button(7)),
-        bomb =bool(joystick.get_button(3)),
-        shot =bool(joystick.get_button(2)),
-    )
 
 class MyController:
     def __init__(self):
@@ -244,92 +231,96 @@ class MyController:
 
 class GameStep:
     def __init__(self, screen, clock) -> None:
-        self.screen = screen
+        self.screen_display = screen
         self.clock = clock
-        self.screen2 = pygame.Surface((PLAYABLE_RECT.width, PLAYABLE_RECT.height))
-        self.screen3 = pygame.Surface((INFO_RECT.width, INFO_RECT.height))
+        self.screen_playarea = pygame.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height))
+        self.screen_info = pygame.Surface((INFO_RECT.width, INFO_RECT.height))
         #font = pygame.font.SysFont(None, 40)
         #pygame.font.get_fonts()で確認、ttfのフルパス指定
-        self.font = pygame.font.SysFont('yumincho', 40)
+        self.fontsize = 40
+        self.fontoffset = 0
+        self.fontname = "data/HackGen35ConsoleNFJ-Bold.ttf"
+        self.font = pygame.font.SysFont(self.fontname, self.fontsize)
         self.bg = pygame.image.load("data/bg.png")
         self.logo = pygame.image.load("data/logo.png")
         self.reimu = Reimu()
 
-        self.screen.blit(self.bg, (0,0))
-        self.screen.blit(
+        self.screen_display.blit(self.bg, (0,0))
+        self.screen_display.blit(
             self.logo,
             (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390)
         )
-#  4/(190/60)*60
     def play(self, t, controller_input) -> None:
-        T = 76
         #self.screen.fill((0,0,0))
-        self.screen2.fill((20,20,20))
-        self.screen3.fill((24,49,125))
+        self.screen_playarea.fill((20,20,20))
+        self.screen_info.fill((24,49,125))
         # テキスト描画処理
-        self.screen3.blit(
-            self.font.render(f"Bomb: ☆x{self.reimu.bomb_stock}", True, (255, 255, 255)),
-            (0, 0)
-        )
-        self.screen3.blit(
-            self.font.render(f"fps:{self.clock.get_fps():.2f}", True, (255, 255, 255)),
-            (0, 50)
-        )
-        self.screen3.blit(
-            self.font.render(f"hit={self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}", True, (255, 255, 255)),
-            (0, 100)
-        )
-        self.screen3.blit(
-            self.font.render(f"bomb={self.reimu.bomb_invincible, t-self.reimu.bomb_lasttime-self.reimu.bomb_invincible_time}", True, (255, 255, 255)),
-            (0, 150)
-        )
+        self.print(f"Bomb: ☆x{self.reimu.bomb_stock}")
+        self.print(f"fps:{self.clock.get_fps():.2f}")
+        self.print(f"hit={self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}")
+        self.print(f"hit={self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}")
+        self.print(f"bomb={self.reimu.bomb_invincible, t-self.reimu.bomb_lasttime-self.reimu.bomb_invincible_time}")
+        self.flush()
 
+        T = 76 # 4beat/(190bpm/60sec)*60frame
         p = params.at((t//T)%len(params))
         q = params.at((t//T+1)%len(params))
         r = (1-t%T/T)*p+t%T/T*q
 
         is_hit = False
         for bullet in hatafast(r):
-            bullet.draw(self.screen2)
+            bullet.draw(self.screen_playarea)
             if not is_hit and ( (self.reimu.pos[0]-bullet.pos[0])**2 + (self.reimu.pos[1]-bullet.pos[1])**2
                 < (self.reimu.radius+bullet.radius)**2 ):
                 is_hit = True
 
         self.reimu.update(t, controller_input, is_hit)
-        self.reimu.draw(t, self.screen2)
+        self.reimu.draw(t, self.screen_playarea)
 
-        self.screen.blit( self.screen2, (BORDER_RECT.left, BORDER_RECT.top))
-        self.screen.blit(self.screen3, (INFO_RECT.left, INFO_RECT.top))
-        pygame.draw.rect(self.screen, (0,255,0), BORDER_RECT, 2)
+        self.screen_display.blit( self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
+        self.screen_display.blit(self.screen_info, (INFO_RECT.left, INFO_RECT.top))
+        pygame.draw.rect(self.screen_display, (0,255,0), BORDER_RECT, 2)
+    
+    def print(self, txt):
+        self.screen_info.blit(
+            self.font.render(txt, True, (255, 255, 255)),
+            (0, self.fontoffset)
+        )
+        self.fontoffset += self.fontsize
+    def flush(self):
+        self.fontoffset = 0
 
 
 
-def main():
-    pygame.init()
-    pygame.display.set_caption("東方不動点")
-    pygame.mixer.music.load("data/ENISHI.wav")
-    pygame.mixer.music.play()
-    screen = pygame.display.set_mode((DISPLAY_RECT.width, DISPLAY_RECT.height))
-    controller = MyController()
-    clock = pygame.time.Clock()
-    game_step = GameStep(screen, clock)
-    t = 0
-    while True:
-        controller_input = controller.check_input()
-        game_step.play(t, controller_input)
-        clock.tick(60)
-        pygame.display.update()
+class MainGameLoop:
+    def __init_(self):
+        pass
+    def main(self) -> None:
+        pygame.init()
+        pygame.display.set_caption("東方不動点")
+        pygame.mixer.music.load("data/ENISHI.wav")
+        pygame.mixer.music.play()
+        screen_display = pygame.display.set_mode((DISPLAY_RECT.width, DISPLAY_RECT.height))
+        controller = MyController()
+        clock = pygame.time.Clock()
+        game_step = GameStep(screen_display, clock)
+        t = 0
+        while True:
+            controller_input = controller.check_input()
+            game_step.play(t, controller_input)
+            clock.tick(60)
+            pygame.display.update()
 
-        for event in pygame.event.get():
-            if event.type == QUIT:
+            for event in pygame.event.get():
+                if event.type == QUIT:
+                    pygame.quit(); sys.exit()
+            if controller_input.esc:
+                t = 0
+            if controller_input.retry:
                 pygame.quit(); sys.exit()
-        if controller_input.esc:
-            t = 0
-        if controller_input.retry:
-            pygame.quit(); sys.exit()
-        t += 1
+            t += 1
 
 
 
 if __name__ == "__main__":
-    main()
+    MainGameLoop().main()
