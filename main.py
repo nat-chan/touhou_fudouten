@@ -10,9 +10,8 @@ import numpy as np
 import math
 
 DISPLAY_RECT = pygame.Rect(0, 0, 1280, 960)
-BOX_RECT = pygame.Rect(62, 30, 834-62, 930-30)
-
-SMALL_RECT = pygame.Rect(0, 0, 386, 450)
+BORDERBOX_RECT = pygame.Rect(62, 30, 834-62, 930-30)
+PLAYABLEAREA_RECT = pygame.Rect(0, 0, 2*386, 2*450)
 
 class MyDict(dict):
     def at(self, k):
@@ -46,9 +45,9 @@ def fast(p, z=np.array([[1, 1, 1]])):
 
 def z2xy(z):
     """画面に収まる位置に座標をスケール"""
-    scale = min(SMALL_RECT.width, SMALL_RECT.height)/2
-    x = z[0]*scale+SMALL_RECT.width/2
-    y = -z[1]*scale+SMALL_RECT.height/2
+    scale = min(PLAYABLEAREA_RECT.width, PLAYABLEAREA_RECT.height)/2
+    x = z[0]*scale+PLAYABLEAREA_RECT.width/2
+    y = -z[1]*scale+PLAYABLEAREA_RECT.height/2
     return (int(x), int(y))
 
 def hatafast(screen, p):
@@ -57,10 +56,13 @@ def hatafast(screen, p):
     for i, z in enumerate(zs):
         rgb = hsv2rgb(i/len(zs), 1, 1)
         xy = z2xy(z)
-        for X in [-220, 0, 220]:
-            for Y in range(-140, 300, 110):
-                _xy = (xy[0]+X, xy[1]+Y)
-                pygame.draw.circle(screen, rgb, _xy, 2)
+        X = 2*np.array([-220, 0, 220]) 
+        Y = 2*np.array(list(range(-140, 300, 110)))
+        for x in X:
+            for y in Y:
+                _xy = (xy[0]+x, xy[1]+y)
+                pygame.draw.circle(screen, (255, 255, 255), _xy, 4)
+                pygame.draw.circle(screen, rgb, _xy, 4, 2)
 
 
 def hsv2rgb(h,s,v):
@@ -74,15 +76,14 @@ class Status:
 
 class Reimu:
     def __init__(self):
-        self.pl00 = pygame.image.load("data/pl00.png")
-        self.pos = np.array((80, 60))
-
-        self.option = pygame.Surface((16, 16), pygame.SRCALPHA)
-        self.option.blit(self.pl00, (0, 0), (3*32, 3*48, 16, 16))
-        self.sloweffect = pygame.Surface((64, 64), pygame.SRCALPHA)
-        self.sloweffect.blit(pygame.image.load("data/eff_sloweffect.png"), (0, 0), (0,0, 64, 64))
-        self.eff_charge = pygame.Surface((32, 32), pygame.SRCALPHA)
-        self.eff_charge.blit(pygame.image.load("data/eff_charge.png"), (0, 0), (0,0, 64, 64))
+        self.pl00 = pygame.image.load("data/w2x_pl00.png")
+        self.pos = np.array((BORDERBOX_RECT.left*.5+BORDERBOX_RECT.right*.5, 60))
+        self.option = pygame.Surface((32, 32), pygame.SRCALPHA)
+        self.option.blit(self.pl00, (0, 0), (3*32*2, 3*48*2, 16*2, 16*2))
+        self.sloweffect = pygame.Surface((128, 128), pygame.SRCALPHA)
+        self.sloweffect.blit(pygame.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
+        self.eff_charge = pygame.Surface((64, 64), pygame.SRCALPHA)
+        self.eff_charge.blit(pygame.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
 
         self.s = Dict({k:Status() for k in Status.KEY})
 
@@ -91,7 +92,7 @@ class Reimu:
             if self.s[k].now^controller_input[k]:
                 self.s[k].last[controller_input[k]] = t
                 self.s[k].now = controller_input[k]
-        speed = [4.0, 2.0][controller_input.slow]
+        speed = 2*[4.0, 2.0][controller_input.slow]
         if [controller_input.left, controller_input.right, controller_input.up, controller_input.down].count(True) == 2:
             speed /= math.sqrt(2)
 
@@ -106,24 +107,22 @@ class Reimu:
             self.pos[1] += speed
 
     def draw(self, t, screen):
-        if self.s.left.now:
-            screen.blit(self.pl00, self.pos-(16, 24), (0+32*(t//8%4), 1*48, 32, 48))
-        elif self.s.right.now:
-            screen.blit(self.pl00, self.pos-(16, 24), (0+32*(t//8%4), 2*48, 32, 48))
-        else:
-            screen.blit(self.pl00, self.pos-(16, 24), (0+32*(t//8%4), 0*48, 32, 48))
+        if self.s.left.now: reimu_offset = 1
+        elif self.s.right.now: reimu_offset = 2
+        else: reimu_offset = 0
+        screen.blit(self.pl00, self.pos-(16*2, 24*2), (0+32*(t//8%4)*2, reimu_offset*48*2, 32*2, 48*2))
 
         angle_option = -t*6%360
-        d = calc_d(angle_option)
+        d = 2*calc_d(angle_option)
         rot_option = pygame.transform.rotate(self.option, angle_option)
 
         angle_sloweffect = t*3%360
-        d2 = calc_d(angle_sloweffect)
+        d2 = 2*calc_d(angle_sloweffect)
         rot_sloweffect = pygame.transform.rotate(self.sloweffect, angle_sloweffect)
         rot_sloweffect2 = pygame.transform.rotate(self.sloweffect, -angle_sloweffect)
 
-        option_pos_lower = np.array([[+16, 32], [-16, 32], [+38, 16], [-38, 16]])
-        option_pos_upper = np.array([[+8, -30], [-8, -30], [+24, -20], [-24, -20]])
+        option_pos_lower = np.array([[+16, 32], [-16, 32], [+38, 16], [-38, 16]])*2
+        option_pos_upper = np.array([[+8, -30], [-8, -30], [+24, -20], [-24, -20]])*2
         option_move = 4
         dt = (t-self.s.slow.last[self.s.slow.now])/option_move
         if 0 <= dt < 1:
@@ -138,7 +137,7 @@ class Reimu:
                 option_pos = option_pos_lower
 
         for o in option_pos:
-            screen.blit(self.eff_charge, self.pos-(16,16)+o, (0, 0, *self.eff_charge.get_size()))
+            screen.blit(self.eff_charge, self.pos-(32,32)+o, (0, 0, *self.eff_charge.get_size()))
             screen.blit(rot_option, self.pos-(8*d, 8*d)+o, (0, 0, *rot_option.get_size()))
 
         if self.s.slow.now:
@@ -176,6 +175,7 @@ class MyController:
             bomb =keys[pygame.K_x],
             shot =keys[pygame.K_z],
             esc  =keys[pygame.K_ESCAPE],
+            retry=keys[pygame.K_r],
         )
 
 
@@ -183,7 +183,7 @@ class GameStep:
     def __init__(self, screen, clock) -> None:
         self.screen = screen
         self.clock = clock
-        self.screen2 = pygame.Surface((SMALL_RECT.width, SMALL_RECT.height))
+        self.screen2 = pygame.Surface((PLAYABLEAREA_RECT.width, PLAYABLEAREA_RECT.height))
         #font = pygame.font.SysFont(None, 40)
         #pygame.font.get_fonts()で確認、ttfのフルパス指定
         self.font = pygame.font.SysFont('yumincho', 40)
@@ -221,10 +221,10 @@ class GameStep:
         self.reimu.draw(t, self.screen2)
 
         self.screen.blit(
-            pygame.transform.scale(self.screen2, (SMALL_RECT.width*2, SMALL_RECT.height*2)),
-            (BOX_RECT.left, BOX_RECT.top)
+            pygame.transform.scale(self.screen2, (PLAYABLEAREA_RECT.width*1, PLAYABLEAREA_RECT.height*1)),
+            (BORDERBOX_RECT.left, BORDERBOX_RECT.top)
         )
-        pygame.draw.rect(self.screen, (0,255,0), BOX_RECT, 2)
+        pygame.draw.rect(self.screen, (0,255,0), BORDERBOX_RECT, 2)
 
 
 
@@ -247,6 +247,8 @@ def main():
                 pygame.quit(); sys.exit()
         if controller_input.esc:
             t = 0
+        if controller_input.retry:
+            pygame.quit(); sys.exit()
         t += 1
 
 
