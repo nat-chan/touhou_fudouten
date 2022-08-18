@@ -235,11 +235,11 @@ class GameStep:
         self.clock = clock
         self.screen_playarea = pygame.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height))
         self.screen_info = pygame.Surface((INFO_RECT.width, INFO_RECT.height))
-        #font = pygame.font.SysFont(None, 40)
-        #pygame.font.get_fonts()で確認、ttfのフルパス指定
-        self.fontsize = 40
+        self.fontsize = 30
         self.fontoffset = 0
-        self.fontname = "data/HackGen35ConsoleNFJ-Bold.ttf"
+        self.fontname = "msgothic"
+        self.fontname = "malgungothicsemilight"
+        self.fontname = "malgungothic"
         self.font = pygame.font.SysFont(self.fontname, self.fontsize)
         self.bg = pygame.image.load("data/bg.png")
         self.logo = pygame.image.load("data/logo.png")
@@ -250,31 +250,44 @@ class GameStep:
             self.logo,
             (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390)
         )
+        self.lastplay = None
+        self.playstop = True
+
+#        self.fonts = pygame.font.get_fonts()
+#        self.fonts = ["malgungothic", "malgungothicsemilight", "microsoftjhenghei", "microsoftjhengheiui", "microsoftyahei", "microsoftyaheiui", "msgothic", "mspgothic", "msuigothic",]*100
+
     def play(self, t, controller_input) -> None:
+#        self.fontname = self.fonts[t//240]
+#        self.font = pygame.font.SysFont(self.fontname, self.fontsize)
+
+        if self.lastplay is None: self.lastplay = t 
         #self.screen.fill((0,0,0))
         self.screen_playarea.fill((20,20,20))
         self.screen_info.fill((24,49,125))
         # テキスト描画処理
-        self.print(f"Bomb: ☆x{self.reimu.bomb_stock}")
+        self.print(f"Bomb: ★x{self.reimu.bomb_stock}")
         self.print(f"fps:{self.clock.get_fps():.2f}")
-        self.print(f"hit={self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}")
-        self.print(f"hit={self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}")
-        self.print(f"bomb={self.reimu.bomb_invincible, t-self.reimu.bomb_lasttime-self.reimu.bomb_invincible_time}")
+        self.print(f"hit: {self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}")
+        self.print(f"bomb: {self.reimu.bomb_invincible, t-self.reimu.bomb_lasttime-self.reimu.bomb_invincible_time}")
+        self.print(f"■□♡♥☆★")
+        self.print(f"{self.fontname}")
         self.flush()
 
-        T = 76 # 4beat/(190bpm/60sec)*60frame
-        p = params.at((t//T)%len(params))
-        q = params.at((t//T+1)%len(params))
-        r = (1-t%T/T)*p+t%T/T*q
+        if self.playstop or True:
+            T = 76 # 4beat/(190bpm/60sec)*60frame
+            p = params.at((t//T)%len(params))
+            q = params.at((t//T+1)%len(params))
+            r = (1-t%T/T)*p+t%T/T*q
 
-        is_hit = False
-        for bullet in hatafast(r):
-            bullet.draw(self.screen_playarea)
-            if not is_hit and ( (self.reimu.pos[0]-bullet.pos[0])**2 + (self.reimu.pos[1]-bullet.pos[1])**2
-                < (self.reimu.radius+bullet.radius)**2 ):
-                is_hit = True
+            is_hit = False
+            for bullet in hatafast(r):
+                bullet.draw(self.screen_playarea)
+                if not is_hit and ( (self.reimu.pos[0]-bullet.pos[0])**2 + (self.reimu.pos[1]-bullet.pos[1])**2
+                    < (self.reimu.radius+bullet.radius)**2 ):
+                    is_hit = True
 
-        self.reimu.update(t, controller_input, is_hit)
+            self.reimu.update(t, controller_input, is_hit)
+        
         self.reimu.draw(t, self.screen_playarea)
 
         self.screen_display.blit( self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
@@ -292,30 +305,30 @@ class GameStep:
 
 
 
-class MainGameLoop:
-    def __init_(self):
-        pass
-    def main(self) -> None:
+class GameMainLoop:
+    def __init__(self):
         pygame.init()
         pygame.display.set_caption("東方不動点")
         pygame.mixer.music.load("data/ENISHI.wav")
+        self.screen_display = pygame.display.set_mode((DISPLAY_RECT.width, DISPLAY_RECT.height))
+        self.controller = MyController()
+        self.clock = pygame.time.Clock()
+        self.game_step = GameStep(self.screen_display, self.clock)
+    def main(self) -> None:
         pygame.mixer.music.play()
-        screen_display = pygame.display.set_mode((DISPLAY_RECT.width, DISPLAY_RECT.height))
-        controller = MyController()
-        clock = pygame.time.Clock()
-        game_step = GameStep(screen_display, clock)
         t = 0
         while True:
-            controller_input = controller.check_input()
-            game_step.play(t, controller_input)
-            clock.tick(60)
+            controller_input = self.controller.check_input()
+            self.game_step.play(t, controller_input)
+            self.clock.tick(60)
             pygame.display.update()
 
             for event in pygame.event.get():
                 if event.type == QUIT:
                     pygame.quit(); sys.exit()
             if controller_input.esc:
-                t = 0
+                t -= 1
+                print(self.game_step.fontname)
             if controller_input.retry:
                 pygame.quit(); sys.exit()
             t += 1
@@ -323,4 +336,5 @@ class MainGameLoop:
 
 
 if __name__ == "__main__":
-    MainGameLoop().main()
+    game = GameMainLoop()
+    game.main()
