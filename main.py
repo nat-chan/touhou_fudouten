@@ -10,8 +10,9 @@ import numpy as np
 import math
 
 DISPLAY_RECT = pygame.Rect(0, 0, 1280, 960)
-BORDERBOX_RECT = pygame.Rect(62, 30, 834-62, 930-30)
-PLAYABLEAREA_RECT = pygame.Rect(0, 0, 2*386, 2*450)
+BORDER_RECT = pygame.Rect(62, 30, 834-62, 930-30)
+PLAYABLE_RECT = pygame.Rect(0, 0, 2*386, 2*450)
+INFO_RECT = pygame.Rect(834+30, 30, 1280-834-2*30, 500)
 
 class MyDict(dict):
     def at(self, k):
@@ -45,9 +46,9 @@ def fast(p, z=np.array([[1, 1, 1]])):
 
 def z2xy(z):
     """画面に収まる位置に座標をスケール"""
-    scale = min(PLAYABLEAREA_RECT.width, PLAYABLEAREA_RECT.height)/2
-    x = z[0]*scale+PLAYABLEAREA_RECT.width/2
-    y = -z[1]*scale+PLAYABLEAREA_RECT.height/2
+    scale = min(PLAYABLE_RECT.width, PLAYABLE_RECT.height)/2
+    x = z[0]*scale+PLAYABLE_RECT.width/2
+    y = -z[1]*scale+PLAYABLE_RECT.height/2
     return (int(x), int(y))
 
 def hatafast(screen, p):
@@ -77,13 +78,18 @@ class Status:
 class Reimu:
     def __init__(self):
         self.pl00 = pygame.image.load("data/w2x_pl00.png")
-        self.pos = np.array((BORDERBOX_RECT.left*.5+BORDERBOX_RECT.right*.5, 60))
+        self.pl10 = pygame.image.load("data/w2x_pl10.png")
+        self.pos = np.array((BORDER_RECT.left*.5+BORDER_RECT.right*.5, 60))
         self.option = pygame.Surface((32, 32), pygame.SRCALPHA)
         self.option.blit(self.pl00, (0, 0), (3*32*2, 3*48*2, 16*2, 16*2))
         self.sloweffect = pygame.Surface((128, 128), pygame.SRCALPHA)
         self.sloweffect.blit(pygame.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
         self.eff_charge = pygame.Surface((64, 64), pygame.SRCALPHA)
         self.eff_charge.blit(pygame.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
+        self.bomb_stock = 3
+        self.bomb_invincible = False
+        self.bomb_invincible_time = 3*60 # 無敵時間3秒
+        self.bomb_lasttime = float("inf")
 
         self.s = Dict({k:Status() for k in Status.KEY})
 
@@ -105,12 +111,34 @@ class Reimu:
             self.pos[1] -= speed
         elif controller_input.down:
             self.pos[1] += speed
+        
+        # 画面外脱出防止
+        mergin = 40
+        if self.pos[0] < PLAYABLE_RECT.left+mergin: self.pos[0] = PLAYABLE_RECT.left+mergin
+        if self.pos[0] > PLAYABLE_RECT.right-mergin: self.pos[0] = PLAYABLE_RECT.right-mergin
+        if self.pos[1] < PLAYABLE_RECT.top+mergin: self.pos[1] = PLAYABLE_RECT.top+mergin
+        if self.pos[1] > PLAYABLE_RECT.bottom-mergin: self.pos[1] = PLAYABLE_RECT.bottom-mergin
+
+        # ボムの処理
+        if self.s["bomb"].now and not self.bomb_invincible and 0 < self.bomb_stock:
+            self.bomb_invincible = True
+            self.bomb_stock -= 1
+            self.bomb_lasttime = t
+        if 0 < t-self.bomb_lasttime-self.bomb_invincible_time:
+            self.bomb_invincible = False
 
     def draw(self, t, screen):
         if self.s.left.now: reimu_offset = 1
         elif self.s.right.now: reimu_offset = 2
         else: reimu_offset = 0
-        screen.blit(self.pl00, self.pos-(16*2, 24*2), (0+32*(t//8%4)*2, reimu_offset*48*2, 32*2, 48*2))
+
+        screen.blit(
+            self.pl10 if self.bomb_invincible else self.pl00,
+            self.pos-(16*2, 24*2), (0+32*(t//8%4)*2, reimu_offset*48*2, 32*2, 48*2))
+        if self.bomb_invincible:
+            bomb_radius = 70*(1-(t-self.bomb_lasttime)/self.bomb_invincible_time)
+            pygame.draw.circle(screen, (0, 255, 255), self.pos, bomb_radius, 2)
+
 
         angle_option = -t*6%360
         d = 2*calc_d(angle_option)
@@ -183,32 +211,34 @@ class GameStep:
     def __init__(self, screen, clock) -> None:
         self.screen = screen
         self.clock = clock
-        self.screen2 = pygame.Surface((PLAYABLEAREA_RECT.width, PLAYABLEAREA_RECT.height))
+        self.screen2 = pygame.Surface((PLAYABLE_RECT.width, PLAYABLE_RECT.height))
+        self.screen3 = pygame.Surface((INFO_RECT.width, INFO_RECT.height))
         #font = pygame.font.SysFont(None, 40)
         #pygame.font.get_fonts()で確認、ttfのフルパス指定
         self.font = pygame.font.SysFont('yumincho', 40)
+        self.bg = pygame.image.load("data/bg.png")
+        self.logo = pygame.image.load("data/logo.png")
         self.reimu = Reimu()
 
+        self.screen.blit(self.bg, (0,0))
+        self.screen.blit(
+            self.logo,
+            (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390)
+        )
+#  4/(190/60)*60
     def play(self, t, controller_input) -> None:
-        T = 100
-        self.screen.fill((0,0,0))
-        self.screen2.fill((30,30,30))
+        T = 76
+        #self.screen.fill((0,0,0))
+        self.screen2.fill((20,20,20))
+        self.screen3.fill((24,49,125))
         # テキスト描画処理
-        self.screen.blit(
+        self.screen3.blit(
             self.font.render(f"fps:{self.clock.get_fps():.2f}", True, (255, 255, 255)),
-            (DISPLAY_RECT.right-160, DISPLAY_RECT.bottom-50)
+            (0, 0)
         )
-        self.screen.blit(
-            self.font.render("Player: ♡×0", True, (255, 255, 255)),
-            (DISPLAY_RECT.right-400, DISPLAY_RECT.top+100)
-        )
-        self.screen.blit(
-            self.font.render(f"Bomb: ☆×{3}", True, (255, 255, 255)),
-            (DISPLAY_RECT.right-400, DISPLAY_RECT.top+150)
-        )
-        self.screen.blit(
-            self.font.render(f"東方不動点", True, (255, 255, 255)),
-            (DISPLAY_RECT.right-400, DISPLAY_RECT.bottom-150)
+        self.screen3.blit(
+            self.font.render(f"Bomb: ☆×{self.reimu.bomb_stock}", True, (255, 255, 255)),
+            (0, 200)
         )
 
         p = params.at((t//T)%len(params))
@@ -220,17 +250,17 @@ class GameStep:
         self.reimu.update(t, controller_input)
         self.reimu.draw(t, self.screen2)
 
-        self.screen.blit(
-            pygame.transform.scale(self.screen2, (PLAYABLEAREA_RECT.width*1, PLAYABLEAREA_RECT.height*1)),
-            (BORDERBOX_RECT.left, BORDERBOX_RECT.top)
-        )
-        pygame.draw.rect(self.screen, (0,255,0), BORDERBOX_RECT, 2)
+        self.screen.blit( self.screen2, (BORDER_RECT.left, BORDER_RECT.top))
+        self.screen.blit(self.screen3, (INFO_RECT.left, INFO_RECT.top))
+        pygame.draw.rect(self.screen, (0,255,0), BORDER_RECT, 2)
 
 
 
 def main():
     pygame.init()
     pygame.display.set_caption("東方不動点")
+    pygame.mixer.music.load("data/ENISHI.wav")
+    pygame.mixer.music.play()
     screen = pygame.display.set_mode((DISPLAY_RECT.width, DISPLAY_RECT.height))
     controller = MyController()
     clock = pygame.time.Clock()
