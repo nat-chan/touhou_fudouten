@@ -51,9 +51,13 @@ def z2xy(z):
     y = -z[1]*scale+PLAYABLE_RECT.height/2
     return (int(x), int(y))
 
-def hatafast(screen, p):
-    """畑写像に関する実際の描画処理"""
+def hsv2rgb(h,s,v):
+    return tuple(round(i*255) for i in colorsys.hsv_to_rgb(h,s,v))
+
+def hatafast(p):
+    """パラメタpの畑写像から極小弾を返す"""
     zs = fast(p)
+    retval = list()
     for i, z in enumerate(zs):
         rgb = hsv2rgb(i/len(zs), 1, 1)
         xy = z2xy(z)
@@ -62,12 +66,20 @@ def hatafast(screen, p):
         for x in X:
             for y in Y:
                 _xy = (xy[0]+x, xy[1]+y)
-                pygame.draw.circle(screen, (255, 255, 255), _xy, 4)
-                pygame.draw.circle(screen, rgb, _xy, 4, 2)
+                if ( PLAYABLE_RECT.left < _xy[0] < PLAYABLE_RECT.right and
+                     PLAYABLE_RECT.top < _xy[1] < PLAYABLE_RECT.bottom 
+                ):
+                    retval.append(SmallCircleBullet(_xy, rgb))
+    return retval
 
+class SmallCircleBullet:
+    def __init__(self, pos, rgb):
+        self.pos = pos; self.rgb = rgb
+        self.radius = 4
+    def draw(self, screen):
+        pygame.draw.circle(screen, (255, 255, 255), self.pos, 4)
+        pygame.draw.circle(screen, self.rgb, self.pos, 4, 2)
 
-def hsv2rgb(h,s,v):
-    return tuple(round(i*255) for i in colorsys.hsv_to_rgb(h,s,v))
 
 class Status:
     KEY = ["left", "right", "up", "down", "slow", "shot", "bomb"]
@@ -79,21 +91,27 @@ class Reimu:
     def __init__(self):
         self.pl00 = pygame.image.load("data/w2x_pl00.png")
         self.pl10 = pygame.image.load("data/w2x_pl10.png")
-        self.pos = np.array((BORDER_RECT.left*.5+BORDER_RECT.right*.5, 60))
+        self.pos = np.array((390, 420))
         self.option = pygame.Surface((32, 32), pygame.SRCALPHA)
         self.option.blit(self.pl00, (0, 0), (3*32*2, 3*48*2, 16*2, 16*2))
         self.sloweffect = pygame.Surface((128, 128), pygame.SRCALPHA)
         self.sloweffect.blit(pygame.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
         self.eff_charge = pygame.Surface((64, 64), pygame.SRCALPHA)
         self.eff_charge.blit(pygame.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
-        self.bomb_stock = 3
+        self.bomb_stock = 100
         self.bomb_invincible = False
-        self.bomb_invincible_time = 3*60 # 無敵時間3秒
+        self.bomb_invincible_time = 2*60 # ボム無敵時間
         self.bomb_lasttime = float("inf")
+        self.hit_invincible = False
+        self.hit_invincible_time = 1*60 # 被弾無敵時間
+        self.hit_lasttime = float("inf")
+        self.se_slash = pygame.mixer.Sound("data/se_slash.wav")
+        self.se_pldead00 = pygame.mixer.Sound("data/se_pldead00.wav")
+        self.radius = 3
 
         self.s = Dict({k:Status() for k in Status.KEY})
 
-    def update(self, t, controller_input):
+    def update(self, t, controller_input, is_hit):
         for k in Status.KEY:
             if self.s[k].now^controller_input[k]:
                 self.s[k].last[controller_input[k]] = t
@@ -120,12 +138,26 @@ class Reimu:
         if self.pos[1] > PLAYABLE_RECT.bottom-mergin: self.pos[1] = PLAYABLE_RECT.bottom-mergin
 
         # ボムの処理
-        if self.s["bomb"].now and not self.bomb_invincible and 0 < self.bomb_stock:
+        if ( self.s["bomb"].now and not self.bomb_invincible 
+        and not self.hit_invincible and 0 < self.bomb_stock ):
             self.bomb_invincible = True
             self.bomb_stock -= 1
             self.bomb_lasttime = t
+            self.se_slash.play()
         if 0 < t-self.bomb_lasttime-self.bomb_invincible_time:
             self.bomb_invincible = False
+
+        if is_hit and not self.bomb_invincible and not self.hit_invincible:
+            self.hit_invincible = True
+            self.bomb_stock -= 2
+            self.hit_lasttime = t
+            self.se_pldead00.play()
+
+        if 0 < t-self.hit_lasttime-self.hit_invincible_time:
+            self.hit_invincible = False
+
+        if self.bomb_stock < 0:
+            pass # TODO
 
     def draw(self, t, screen):
         if self.s.left.now: reimu_offset = 1
@@ -133,11 +165,14 @@ class Reimu:
         else: reimu_offset = 0
 
         screen.blit(
-            self.pl10 if self.bomb_invincible else self.pl00,
+            self.pl10 if self.bomb_invincible or self.hit_invincible else self.pl00,
             self.pos-(16*2, 24*2), (0+32*(t//8%4)*2, reimu_offset*48*2, 32*2, 48*2))
         if self.bomb_invincible:
-            bomb_radius = 70*(1-(t-self.bomb_lasttime)/self.bomb_invincible_time)
+            bomb_radius = self.bomb_invincible_time*(1-(t-self.bomb_lasttime)/self.bomb_invincible_time)
             pygame.draw.circle(screen, (0, 255, 255), self.pos, bomb_radius, 2)
+        elif self.hit_invincible:
+            hit_radius = self.hit_invincible_time*(1-(t-self.hit_lasttime)/self.hit_invincible_time)
+            pygame.draw.circle(screen, (0, 0, 255), self.pos, hit_radius, 2)
 
 
         angle_option = -t*6%360
@@ -233,21 +268,34 @@ class GameStep:
         self.screen3.fill((24,49,125))
         # テキスト描画処理
         self.screen3.blit(
-            self.font.render(f"fps:{self.clock.get_fps():.2f}", True, (255, 255, 255)),
+            self.font.render(f"Bomb: ☆x{self.reimu.bomb_stock}", True, (255, 255, 255)),
             (0, 0)
         )
         self.screen3.blit(
-            self.font.render(f"Bomb: ☆×{self.reimu.bomb_stock}", True, (255, 255, 255)),
-            (0, 200)
+            self.font.render(f"fps:{self.clock.get_fps():.2f}", True, (255, 255, 255)),
+            (0, 50)
+        )
+        self.screen3.blit(
+            self.font.render(f"hit={self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}", True, (255, 255, 255)),
+            (0, 100)
+        )
+        self.screen3.blit(
+            self.font.render(f"bomb={self.reimu.bomb_invincible, t-self.reimu.bomb_lasttime-self.reimu.bomb_invincible_time}", True, (255, 255, 255)),
+            (0, 150)
         )
 
         p = params.at((t//T)%len(params))
         q = params.at((t//T+1)%len(params))
         r = (1-t%T/T)*p+t%T/T*q
 
-        hatafast(self.screen2, r)
+        is_hit = False
+        for bullet in hatafast(r):
+            bullet.draw(self.screen2)
+            if not is_hit and ( (self.reimu.pos[0]-bullet.pos[0])**2 + (self.reimu.pos[1]-bullet.pos[1])**2
+                < (self.reimu.radius+bullet.radius)**2 ):
+                is_hit = True
 
-        self.reimu.update(t, controller_input)
+        self.reimu.update(t, controller_input, is_hit)
         self.reimu.draw(t, self.screen2)
 
         self.screen.blit( self.screen2, (BORDER_RECT.left, BORDER_RECT.top))
