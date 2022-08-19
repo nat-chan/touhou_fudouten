@@ -8,11 +8,17 @@ from addict import Dict
 from itertools import count
 import numpy as np
 import math
+from collections import defaultdict
+
+CONFIG = dict()
+CONFIG["bomb_stock"] = 8
 
 DISPLAY_RECT = pygame.Rect(0, 0, 1280, 960)
 BORDER_RECT = pygame.Rect(62, 30, 834-62, 930-30)
 PLAYAREA_RECT = pygame.Rect(0, 0, 2*386, 2*450)
 INFO_RECT = pygame.Rect(834+30, 30, 1280-834-2*30, 500)
+
+class se: pass
 
 class MyDict(dict):
     def at(self, k):
@@ -91,22 +97,22 @@ class Reimu:
     def __init__(self):
         self.pl00 = pygame.image.load("data/w2x_pl00.png")
         self.pl10 = pygame.image.load("data/w2x_pl10.png")
-        self.pos = np.array((390, 420))
+        self.pos = np.array((390, 430))
         self.option = pygame.Surface((32, 32), pygame.SRCALPHA)
         self.option.blit(self.pl00, (0, 0), (3*32*2, 3*48*2, 16*2, 16*2))
         self.sloweffect = pygame.Surface((128, 128), pygame.SRCALPHA)
         self.sloweffect.blit(pygame.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
         self.eff_charge = pygame.Surface((64, 64), pygame.SRCALPHA)
         self.eff_charge.blit(pygame.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
-        self.bomb_stock = 100
+        self.bomb_stock = CONFIG["bomb_stock"]
         self.bomb_invincible = False
         self.bomb_invincible_time = 2*60 # ボム無敵時間
         self.bomb_lasttime = float("inf")
         self.hit_invincible = False
         self.hit_invincible_time = 1*60 # 被弾無敵時間
         self.hit_lasttime = float("inf")
-        self.se_slash = pygame.mixer.Sound("data/se_slash.wav")
-        self.se_pldead00 = pygame.mixer.Sound("data/se_pldead00.wav")
+        se.slash = pygame.mixer.Sound("data/se_slash.wav")
+        se.pldead00 = pygame.mixer.Sound("data/se_pldead00.wav")
         self.radius = 3
 
         self.s = Dict({k:Status() for k in Status.KEY})
@@ -143,7 +149,7 @@ class Reimu:
             self.bomb_invincible = True
             self.bomb_stock -= 1
             self.bomb_lasttime = t
-            self.se_slash.play()
+            se.slash.play()
         if 0 < t-self.bomb_lasttime-self.bomb_invincible_time:
             self.bomb_invincible = False
 
@@ -151,13 +157,10 @@ class Reimu:
             self.hit_invincible = True
             self.bomb_stock -= 2
             self.hit_lasttime = t
-            self.se_pldead00.play()
+            se.pldead00.play()
 
         if 0 < t-self.hit_lasttime-self.hit_invincible_time:
             self.hit_invincible = False
-
-        if self.bomb_stock < 0:
-            pass # TODO
 
     def draw(self, t, screen):
         if self.s.left.now: reimu_offset = 1
@@ -234,11 +237,11 @@ class GameStep:
         self.screen_display = screen
         self.clock = clock
         self.screen_playarea = pygame.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height))
+        self.screen_playarea_color = (20,20,20)
         self.screen_info = pygame.Surface((INFO_RECT.width, INFO_RECT.height))
+        self.screen_info_color = (24,49,125)
         self.fontsize = 30
         self.fontoffset = 0
-        self.fontname = "msgothic"
-        self.fontname = "malgungothicsemilight"
         self.fontname = "malgungothic"
         self.font = pygame.font.SysFont(self.fontname, self.fontsize)
         self.bg = pygame.image.load("data/bg.png")
@@ -246,34 +249,23 @@ class GameStep:
         self.reimu = Reimu()
 
         self.screen_display.blit(self.bg, (0,0))
-        self.screen_display.blit(
-            self.logo,
-            (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390)
-        )
-        self.lastplay = None
-        self.playstop = True
-
-#        self.fonts = pygame.font.get_fonts()
-#        self.fonts = ["malgungothic", "malgungothicsemilight", "microsoftjhenghei", "microsoftjhengheiui", "microsoftyahei", "microsoftyaheiui", "msgothic", "mspgothic", "msuigothic",]*100
+        self.screen_display.blit(self.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
+        self.gameover = False
 
     def play(self, t, controller_input) -> None:
-#        self.fontname = self.fonts[t//240]
-#        self.font = pygame.font.SysFont(self.fontname, self.fontsize)
-
-        if self.lastplay is None: self.lastplay = t 
-        #self.screen.fill((0,0,0))
-        self.screen_playarea.fill((20,20,20))
-        self.screen_info.fill((24,49,125))
+        self.screen_playarea.fill(self.screen_playarea_color)
+        self.screen_info.fill(self.screen_info_color)
         # テキスト描画処理
-        self.print(f"Bomb: ★x{self.reimu.bomb_stock}")
+        self.fontoffset = 0
+        self.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
         self.print(f"fps:{self.clock.get_fps():.2f}")
         self.print(f"hit: {self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}")
         self.print(f"bomb: {self.reimu.bomb_invincible, t-self.reimu.bomb_lasttime-self.reimu.bomb_invincible_time}")
         self.print(f"■□♡♥☆★")
+        self.print(f"{pygame.mixer.music.get_pos()}")
         self.print(f"{self.fontname}")
-        self.flush()
 
-        if self.playstop or True:
+        if True: # スペカ部分
             T = 76 # 4beat/(190bpm/60sec)*60frame
             p = params.at((t//T)%len(params))
             q = params.at((t//T+1)%len(params))
@@ -290,7 +282,7 @@ class GameStep:
         
         self.reimu.draw(t, self.screen_playarea)
 
-        self.screen_display.blit( self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
+        self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
         self.screen_display.blit(self.screen_info, (INFO_RECT.left, INFO_RECT.top))
         pygame.draw.rect(self.screen_display, (0,255,0), BORDER_RECT, 2)
     
@@ -300,8 +292,40 @@ class GameStep:
             (0, self.fontoffset)
         )
         self.fontoffset += self.fontsize
-    def flush(self):
-        self.fontoffset = 0
+
+class TitleStep:
+    def __init__(self, screen, clock) -> None:
+        self.screen_display = screen
+        self.clock = clock
+        self.screen_description = pygame.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height), pygame.SRCALPHA)
+        self.screen_playarea_color = (20,20,20)
+        self.description = pygame.image.load("data/description4.png")
+        self.bg = pygame.image.load("data/bg.png")
+        self.logo = pygame.image.load("data/logo.png")
+        self.offset = 0
+        self.scroll_speed = 20
+
+    def play(self, t, controller_input) -> None:
+        if controller_input.down:
+            self.offset -= self.scroll_speed
+        elif controller_input.up:
+            self.offset += self.scroll_speed
+        if self.offset < -590: self.offset = -590
+        if self.offset > 0: self.offset = 0
+        global CONFIG
+
+        if controller_input.left:
+            CONFIG["bomb_stock"] -= 1
+            se.ok00.play()
+        elif controller_input.right:
+            CONFIG["bomb_stock"] += 1
+            se.ok00.play()
+        if CONFIG["bomb_stock"] < 0: CONFIG["bomb_stock"] = 0
+
+        self.screen_display.blit(self.bg, (0,0))
+        self.screen_display.blit(self.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
+        self.screen_description.blit(self.description, (0,0))
+        self.screen_display.blit(self.description, (BORDER_RECT.left+130, BORDER_RECT.top + self.offset))
 
 
 
@@ -313,25 +337,50 @@ class GameMainLoop:
         self.screen_display = pygame.display.set_mode((DISPLAY_RECT.width, DISPLAY_RECT.height))
         self.controller = MyController()
         self.clock = pygame.time.Clock()
-        self.game_step = GameStep(self.screen_display, self.clock)
-    def main(self) -> None:
+        self.flag = defaultdict(bool)
+        se.cancel00 = pygame.mixer.Sound("data/se_cancel00.wav")
+        se.ok00 = pygame.mixer.Sound("data/se_ok00.wav")
+
+    def restart(self):
+        self.flag["gamestart"] = True
+        pygame.mixer.music.stop()
+        pygame.mixer.music.rewind()
         pygame.mixer.music.play()
-        t = 0
+        self.game_step = GameStep(self.screen_display, self.clock)
+        self.t = 0
+        se.ok00.play()
+    
+    def quit(self):
+        self.flag["gamestart"] = False
+        pygame.mixer.music.stop()
+        pygame.mixer.music.rewind()
+        self.game_step = GameStep(self.screen_display, self.clock)
+        se.cancel00.play()
+
+    def main(self) -> None:
+        self.game_step = GameStep(self.screen_display, self.clock)
+        self.title_step = TitleStep(self.screen_display, self.clock)
+        self.t = 0
         while True:
             controller_input = self.controller.check_input()
-            self.game_step.play(t, controller_input)
+            if self.flag["gamestart"]:
+                self.game_step.play(self.t, controller_input)
+                if self.game_step.reimu.bomb_stock < 0:
+                    self.quit()
+            else:
+                self.title_step.play(self.t, controller_input)
             self.clock.tick(60)
             pygame.display.update()
 
             for event in pygame.event.get():
                 if event.type == QUIT:
                     pygame.quit(); sys.exit()
-            if controller_input.esc:
-                t -= 1
-                print(self.game_step.fontname)
-            if controller_input.retry:
-                pygame.quit(); sys.exit()
-            t += 1
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_r:
+                        self.restart()
+                    if event.key == pygame.K_ESCAPE:
+                        self.quit()
+            self.t += 1
 
 
 
