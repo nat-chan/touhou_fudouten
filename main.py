@@ -81,7 +81,7 @@ def hatafast(p):
 class SmallCircleBullet:
     def __init__(self, pos, rgb):
         self.pos = pos; self.rgb = rgb
-        self.radius = 4
+        self.radius = 2 # 外周の色部分には判定なし
     def draw(self, screen):
         pygame.draw.circle(screen, (255, 255, 255), self.pos, 4)
         pygame.draw.circle(screen, self.rgb, self.pos, 4, 2)
@@ -111,9 +111,8 @@ class Reimu:
         self.hit_invincible = False
         self.hit_invincible_time = 1*60 # 被弾無敵時間
         self.hit_lasttime = float("inf")
-        se.slash = pygame.mixer.Sound("data/se_slash.wav")
-        se.pldead00 = pygame.mixer.Sound("data/se_pldead00.wav")
-        self.radius = 3
+        self.radius = 5 # 通常は3.0, 2.4の2倍
+        self.kurai_bomb = 30 # 通常は8、15でもよさそう
 
         self.s = Dict({k:Status() for k in Status.KEY})
 
@@ -143,21 +142,35 @@ class Reimu:
         if self.pos[1] < PLAYAREA_RECT.top+mergin: self.pos[1] = PLAYAREA_RECT.top+mergin
         if self.pos[1] > PLAYAREA_RECT.bottom-mergin: self.pos[1] = PLAYAREA_RECT.bottom-mergin
 
-        # ボムの処理
-        if ( self.s["bomb"].now and not self.bomb_invincible 
-        and not self.hit_invincible and 0 < self.bomb_stock ):
+        # 通常のボムの処理
+        if ( self.s["bomb"].now and 0 < self.bomb_stock 
+            and not self.bomb_invincible and not self.hit_invincible ):
             self.bomb_invincible = True
             self.bomb_stock -= 1
             self.bomb_lasttime = t
             se.slash.play()
-        if 0 < t-self.bomb_lasttime-self.bomb_invincible_time:
-            self.bomb_invincible = False
 
-        if is_hit and not self.bomb_invincible and not self.hit_invincible:
+        # 通常の被弾の処理
+        elif is_hit and not self.bomb_invincible and not self.hit_invincible:
             self.hit_invincible = True
             self.bomb_stock -= 2
             self.hit_lasttime = t
             se.pldead00.play()
+
+        # 喰らいボムの処理
+        elif ( self.s["bomb"].now and 0 < self.bomb_stock and self.hit_invincible ): 
+#            print(t-self.hit_lasttime)
+            if t-self.hit_lasttime <= self.kurai_bomb:
+                self.hit_invincible = False
+                self.bomb_invincible = True
+                self.bomb_stock += 1
+                self.bomb_lasttime = t
+                se.slash.play()
+
+
+        # 無敵時間終了処理
+        if 0 < t-self.bomb_lasttime-self.bomb_invincible_time:
+            self.bomb_invincible = False
 
         if 0 < t-self.hit_lasttime-self.hit_invincible_time:
             self.hit_invincible = False
@@ -275,7 +288,7 @@ class GameStep:
             for bullet in hatafast(r):
                 bullet.draw(self.screen_playarea)
                 if not is_hit and ( (self.reimu.pos[0]-bullet.pos[0])**2 + (self.reimu.pos[1]-bullet.pos[1])**2
-                    < (self.reimu.radius+bullet.radius)**2 ):
+                    < (self.reimu.radius+bullet.radius)**2 ) and not controller_input.shot:
                     is_hit = True
 
             self.reimu.update(t, controller_input, is_hit)
@@ -340,6 +353,8 @@ class GameMainLoop:
         self.flag = defaultdict(bool)
         se.cancel00 = pygame.mixer.Sound("data/se_cancel00.wav")
         se.ok00 = pygame.mixer.Sound("data/se_ok00.wav")
+        se.slash = pygame.mixer.Sound("data/se_slash.wav")
+        se.pldead00 = pygame.mixer.Sound("data/se_pldead00.wav")
 
     def restart(self):
         self.flag["gamestart"] = True
@@ -365,7 +380,10 @@ class GameMainLoop:
             controller_input = self.controller.check_input()
             if self.flag["gamestart"]:
                 self.game_step.play(self.t, controller_input)
-                if self.game_step.reimu.bomb_stock < 0:
+                if (self.game_step.reimu.bomb_stock < 0
+                    and not self.game_step.reimu.bomb_invincible
+                    and not self.game_step.reimu.hit_invincible
+                ):
                     self.quit()
             else:
                 self.title_step.play(self.t, controller_input)
