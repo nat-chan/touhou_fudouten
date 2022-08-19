@@ -89,7 +89,8 @@ class Reimu:
     def __init__(self):
         self.pl00 = pygame.image.load("data/w2x_pl00.png")
         self.pl10 = pygame.image.load("data/w2x_pl10.png")
-        self.pos = np.array((390, 430))
+#        self.pos = np.array((390, 430))
+        self.pos = np.array((PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.bottom+30))
         self.option = pygame.Surface((32, 32), pygame.SRCALPHA)
         self.option.blit(self.pl00, (0, 0), (3*32*2, 3*48*2, 16*2, 16*2))
         self.sloweffect = pygame.Surface((128, 128), pygame.SRCALPHA)
@@ -286,11 +287,14 @@ class GameStep:
         self.print(f"{self.beats[0]}")
         self.print(f"{self.fontname}")
 
+        # SpellCard
         if self.beats[0] != self.beats[1]:
             if self.beats[0] == (0,0,0,0):
                 self.spell_card = OneSpellCard(t, ms, self.beats, self.reimu)
             elif self.beats[0] == (0,0,1,0):
                 self.spell_card = HataSpellCard(t, ms, self.beats, self.reimu)
+            elif self.beats[0] == (0,0,3,7):
+                self.spell_card = LastSpellCard(t, ms, self.beats, self.reimu)
 
         is_hit = False
         for bullet in self.spell_card(t, ms, self.beats):
@@ -407,9 +411,63 @@ class OneSpellCard(AbstractSpellCard):
                     self.bullets.append(
                         StraightRedMiddleCircleBullet(self.rc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
                     )
+            if beats[0] == (0,3,0,0):
+                for i in range(32):
+                    self.bullets.append(
+                        StraightRedMiddleCircleBullet(self.lc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+                    )
+            if beats[0] == (1,3,0,0):
+                for i in range(32):
+                    self.bullets.append(
+                        StraightRedMiddleCircleBullet(self.lc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+                    )
+            if beats[0] == (2,3,0,0):
+                for i in range(32):
+                    self.bullets.append(
+                        StraightRedMiddleCircleBullet(self.rc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+                    )
+            if beats[0] == (3,3,0,0):
+                for i in range(32):
+                    self.bullets.append(
+                        StraightRedMiddleCircleBullet(self.rc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+                    )
         for bullet in self.bullets:
             bullet.update()
         return self.bullets+[self.lcc, self.rcc]
+
+class LastSpellCard(AbstractSpellCard):
+    def __init__(self, t, ms, beats, reimu):
+        super().__init__(t, ms, beats, reimu)
+        self.center1 = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top*.5+PLAYAREA_RECT.bottom*.5])
+        self.center2 = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top-100])
+        self.way = 18 
+        self.earth_radius = 50
+        self.cspeed = 0.0005
+        self.const = 1
+        self.gap = 70
+        self.gain = self.cspeed/100
+    def __call__(self, t, ms, beats):
+        t -= self.t
+        T = 60*10
+        if T < t:
+            self.center = self.center1
+            self.cspeed += self.gain
+        else:
+            self.center = t/T*self.center1 + (1-t/T)*self.center2
+        self.lwind = list()
+        self.rwind = list()
+        for j in range(1, 12):
+            for i in range(32):
+                self.lwind.append(
+                    MiddleCircleBullet(circ(self.center, (j+self.const)*self.cspeed*t+i*2*np.pi/self.way, self.earth_radius+self.gap*j), (255, 0, 0))
+                )
+                self.rwind.append(
+                    MiddleCircleBullet(circ(self.center, -(j+self.const)*self.cspeed*t-i*2*np.pi/self.way, self.earth_radius+self.gap*j+self.gap*.5), (0, 0, 255))
+                )
+        return self.lwind+self.rwind
+
+def circ(center, angle, radius):
+    return np.array(center)+radius*np.array([np.cos(angle), np.sin(angle)])
 
 class TitleStep:
     def __init__(self, screen, clock) -> None:
@@ -465,17 +523,17 @@ class GameMainLoop:
 
     def restart(self):
         self.flag["gamestart"] = True
-        pygame.mixer.music.load("data/ENISHI.wav")
+        pygame.mixer.music.load("data/ENISHI.ogg")
         pygame.mixer.music.stop()
         pygame.mixer.music.rewind()
-        pygame.mixer.music.play()
+        pygame.mixer.music.play(1, 0)
         self.game_step = GameStep(self.screen_display, self.clock)
         self.t = 0
         se.ok00.play()
     
     def quit(self):
         self.flag["gamestart"] = False
-        pygame.mixer.music.load("data/Yours.wav")
+        pygame.mixer.music.load("data/Yours.ogg")
         pygame.mixer.music.stop()
         pygame.mixer.music.rewind()
         pygame.mixer.music.play(loops=-1)
