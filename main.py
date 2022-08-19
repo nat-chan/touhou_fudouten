@@ -166,6 +166,10 @@ class Reimu:
                 self.bomb_stock += 1
                 self.bomb_lasttime = t
                 se.slash.play()
+        
+        elif ( self.s["bomb"].now and 0 >= self.bomb_stock 
+            and not self.bomb_invincible and not self.hit_invincible ):
+            se.invalid.play()
 
 
         # 無敵時間終了処理
@@ -275,6 +279,7 @@ class GameStep:
         self.print(f"hit: {self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}")
         self.print(f"bomb: {self.reimu.bomb_invincible, t-self.reimu.bomb_lasttime-self.reimu.bomb_invincible_time}")
         self.print(f"■□♡♥☆★")
+        self.print("こんにちわ世界")
         self.print(f"{pygame.mixer.music.get_pos()}")
         self.print(f"{self.fontname}")
 
@@ -346,7 +351,6 @@ class GameMainLoop:
     def __init__(self):
         pygame.init()
         pygame.display.set_caption("東方不動点")
-        pygame.mixer.music.load("data/ENISHI.wav")
         self.screen_display = pygame.display.set_mode((DISPLAY_RECT.width, DISPLAY_RECT.height))
         self.controller = MyController()
         self.clock = pygame.time.Clock()
@@ -355,9 +359,13 @@ class GameMainLoop:
         se.ok00 = pygame.mixer.Sound("data/se_ok00.wav")
         se.slash = pygame.mixer.Sound("data/se_slash.wav")
         se.pldead00 = pygame.mixer.Sound("data/se_pldead00.wav")
+        se.invalid = pygame.mixer.Sound("data/se_invalid.wav")
+        pygame.mixer.music.load("data/Yours.wav")
+        pygame.mixer.music.play(loops=-1)
 
     def restart(self):
         self.flag["gamestart"] = True
+        pygame.mixer.music.load("data/ENISHI.wav")
         pygame.mixer.music.stop()
         pygame.mixer.music.rewind()
         pygame.mixer.music.play()
@@ -367,8 +375,10 @@ class GameMainLoop:
     
     def quit(self):
         self.flag["gamestart"] = False
+        pygame.mixer.music.load("data/Yours.wav")
         pygame.mixer.music.stop()
         pygame.mixer.music.rewind()
+        pygame.mixer.music.play(loops=-1)
         self.game_step = GameStep(self.screen_display, self.clock)
         se.cancel00.play()
 
