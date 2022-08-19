@@ -78,14 +78,6 @@ def hatafast(p):
                     retval.append(SmallCircleBullet(_xy, rgb))
     return retval
 
-class SmallCircleBullet:
-    def __init__(self, pos, rgb):
-        self.pos = pos; self.rgb = rgb
-        self.radius = 2 # 外周の色部分には判定なし
-    def draw(self, screen):
-        pygame.draw.circle(screen, (255, 255, 255), self.pos, 4)
-        pygame.draw.circle(screen, self.rgb, self.pos, 4, 2)
-
 
 class Status:
     KEY = ["left", "right", "up", "down", "slow", "shot", "bomb"]
@@ -248,6 +240,12 @@ class MyController:
             retry=keys[pygame.K_r],
         )
 
+def ms2beats(ms):
+    count = int(190/(60*1000)*ms)
+    beats = (count%4, count//4%4, count//16%4, count//64)
+    assert beats[0]+4*beats[1]+16*beats[2]+64*beats[3] == count
+    return beats
+
 
 class GameStep:
     def __init__(self, screen, clock) -> None:
@@ -268,6 +266,8 @@ class GameStep:
         self.screen_display.blit(self.bg, (0,0))
         self.screen_display.blit(self.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
         self.gameover = False
+        self.beats = [None, None]
+        self.spell_card = AbstractSpellCard(0, 0, self.beats, self.reimu)
 
     def play(self, t, controller_input) -> None:
         self.screen_playarea.fill(self.screen_playarea_color)
@@ -280,24 +280,27 @@ class GameStep:
         self.print(f"bomb: {self.reimu.bomb_invincible, t-self.reimu.bomb_lasttime-self.reimu.bomb_invincible_time}")
         self.print(f"■□♡♥☆★")
         self.print("こんにちわ世界")
-        self.print(f"{pygame.mixer.music.get_pos()}")
+        ms = pygame.mixer.music.get_pos()
+        self.beats = [ms2beats(ms), self.beats[0]]
+        self.print(f"{ms}")
+        self.print(f"{self.beats[0]}")
         self.print(f"{self.fontname}")
 
-        if True: # スペカ部分
-            T = 76 # 4beat/(190bpm/60sec)*60frame
-            p = params.at((t//T)%len(params))
-            q = params.at((t//T+1)%len(params))
-            r = (1-t%T/T)*p+t%T/T*q
+        if self.beats[0] != self.beats[1]:
+            if self.beats[0] == (0,0,0,0):
+                self.spell_card = OneSpellCard(t, ms, self.beats, self.reimu)
+            elif self.beats[0] == (0,0,1,0):
+                self.spell_card = HataSpellCard(t, ms, self.beats, self.reimu)
 
-            is_hit = False
-            for bullet in hatafast(r):
-                bullet.draw(self.screen_playarea)
-                if not is_hit and ( (self.reimu.pos[0]-bullet.pos[0])**2 + (self.reimu.pos[1]-bullet.pos[1])**2
-                    < (self.reimu.radius+bullet.radius)**2 ) and not controller_input.shot:
-                    is_hit = True
+        is_hit = False
+        for bullet in self.spell_card(t, ms, self.beats):
+            bullet.draw(self.screen_playarea)
+            if not is_hit and ( (self.reimu.pos[0]-bullet.pos[0])**2 + (self.reimu.pos[1]-bullet.pos[1])**2
+                < (self.reimu.radius+bullet.radius)**2 ) and not controller_input.shot:
+                is_hit = True
 
-            self.reimu.update(t, controller_input, is_hit)
-        
+        self.reimu.update(t, controller_input, is_hit)
+    
         self.reimu.draw(t, self.screen_playarea)
 
         self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
@@ -310,6 +313,103 @@ class GameStep:
             (0, self.fontoffset)
         )
         self.fontoffset += self.fontsize
+
+class SmallCircleBullet:
+    def __init__(self, pos, rgb):
+        self.pos = pos; self.rgb = rgb
+        self.radius = 2 # 外周の色部分には判定なし
+    def draw(self, screen):
+        pygame.draw.circle(screen, (255, 255, 255), self.pos, 4)
+        pygame.draw.circle(screen, self.rgb, self.pos, 4, 2)
+
+class MiddleCircleBullet:
+    def __init__(self, pos, rgb):
+        self.pos = pos; self.rgb = rgb
+        self.radius = 10 # 外周の色部分には判定なし
+        self.border = 3
+    def draw(self, screen):
+        pygame.draw.circle(screen, (255, 255, 255), self.pos, self.radius+self.border)
+        pygame.draw.circle(screen, self.rgb, self.pos, self.radius+self.border, self.border)
+
+class StraightRedMiddleCircleBullet:
+    def __init__(self, pos, direction):
+        self.pos = pos
+        self.rgb = (255, 0, 0)
+        self.radius = 10 # 外周の色部分には判定なし
+        self.border = 3
+        self.direction = direction
+        self.speed = 10
+    def draw(self, screen):
+        pygame.draw.circle(screen, (255, 255, 255), self.pos, self.radius+self.border)
+        pygame.draw.circle(screen, self.rgb, self.pos, self.radius+self.border, self.border)
+    def update(self):
+        self.pos = self.pos + self.speed*self.direction
+
+
+
+class AbstractSpellCard:
+    def __init__(self, t, ms, beats, reimu):
+        self.t = t
+        self.ms = ms
+        self.beats = beats
+        self.reimu = reimu
+    def __call__(self, t, ms, beats):
+        return []
+
+class HataSpellCard(AbstractSpellCard):
+    def __call__(self, t, ms, beats):
+        t -= self.t
+        T = 76 # 4beat/(190bpm/60sec)*60frame
+        p = params.at((t//T)%len(params))
+        q = params.at((t//T+1)%len(params))
+        r = (1-t%T/T)*p+t%T/T*q
+        return hatafast(r)
+
+class OneSpellCard(AbstractSpellCard):
+    def __init__(self, t, ms, beats, reimu):
+        super().__init__(t, ms, beats, reimu)
+        self.bullets = list()
+        self.margin = 100
+        self.color = (255, 0, 0)
+        self.lc = np.array([PLAYAREA_RECT.left+self.margin, PLAYAREA_RECT.top+self.margin])
+        self.lcc = MiddleCircleBullet(self.lc, self.color)
+        self.rc = np.array([PLAYAREA_RECT.right-self.margin, PLAYAREA_RECT.top+self.margin])
+        self.rcc = MiddleCircleBullet(self.rc, self.color)
+        self.way = 32
+        for i in range(32):
+            self.bullets.append(
+                StraightRedMiddleCircleBullet(self.lc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+            )
+    def __call__(self, t, ms, beats):
+        if beats[0] != beats[1]:
+            if beats[0] == (2,0,0,0):
+                for i in range(32):
+                    self.bullets.append(
+                        StraightRedMiddleCircleBullet(self.rc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+                    )
+            if beats[0] == (0,1,0,0):
+                for i in range(32):
+                    self.bullets.append(
+                        StraightRedMiddleCircleBullet(self.lc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+                    )
+            if beats[0] == (2,1,0,0):
+                for i in range(32):
+                    self.bullets.append(
+                        StraightRedMiddleCircleBullet(self.rc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+                    )
+            if beats[0] == (0,2,0,0):
+                for i in range(32):
+                    self.bullets.append(
+                        StraightRedMiddleCircleBullet(self.lc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+                    )
+            if beats[0] == (2,2,0,0):
+                for i in range(32):
+                    self.bullets.append(
+                        StraightRedMiddleCircleBullet(self.rc, np.array([np.cos(i*2*np.pi/self.way), np.sin(i*2*np.pi/self.way)]))
+                    )
+        for bullet in self.bullets:
+            bullet.update()
+        return self.bullets+[self.lcc, self.rcc]
 
 class TitleStep:
     def __init__(self, screen, clock) -> None:
@@ -409,7 +509,6 @@ class GameMainLoop:
                     if event.key == pygame.K_ESCAPE:
                         self.quit()
             self.t += 1
-
 
 
 if __name__ == "__main__":
