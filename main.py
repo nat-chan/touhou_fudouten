@@ -76,7 +76,7 @@ def circ(center: np.ndarray, angle: float, radius: float) -> np.ndarray:
 
 def calc_d(angle: float) -> float:
     """32x32等の円形スプライトを回転させる時の中心からのズレ"""
-    return math.cos(angle%90/360*2*math.pi)+math.sin(angle%90/360*2*math.pi)
+    return math.cos(angle%90/360*2*np.pi)+math.sin(angle%90/360*2*np.pi)
 
 # beat(拍数)関連の補助関数
 beat_t = Tuple[int, int, int, int]
@@ -96,9 +96,13 @@ def beat2squares(beat: beat_t) -> List[str]:
     squares[4][beat[i]//4%4] = "■"
     return reversed(["".join(s) for s in squares])
 
+def square_dist(a, b):
+    """aとbの距離の2乗"""
+    return (a.pos[0]-b.pos[0])**2 + (a.pos[1]-b.pos[1])**2
+
 def check_hit(a, b) -> bool:
     """被弾判定、東方は円どうしの交点が直交するまで重なるが特に考慮せずに通常の判定"""
-    return (a.pos[0]-b.pos[0])**2 + (a.pos[1]-b.pos[1])**2 < (a.radius+b.radius)**2
+    return square_dist(a, b) < (a.radius+b.radius)**2
 
 ################ メインクラス群 ################
 class Status:
@@ -317,7 +321,8 @@ class GameStep:
             self.spell_card = OneSpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,1,0):
             self.reimu.guard_spellcard(t)
-            self.spell_card = HataSpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
+#            self.spell_card = HataSpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,2,2): #1サビ
             self.reimu.guard_spellcard(t)
             self.spell_card = HataSpellCard2(t, ms, self.beats, self.reimu)
@@ -469,6 +474,38 @@ class OneSpellCard(AbstractSpellCard):
         for bullet in self.bullets:
             bullet.update()
         return self.bullets+[self.lcc, self.rcc]
+
+class ExpansionSpellCard(AbstractSpellCard):
+    def __init__(self, t, ms, beats, reimu):
+        super().__init__(t, ms, beats, reimu)
+        self.name = "「膨張する時空間異常」"
+        bulletss = list()
+        self.gap = 100
+        self.margin = 10
+        y = PLAYAREA_RECT.top + self.margin
+        while y < PLAYAREA_RECT.bottom - self.margin:
+            x = PLAYAREA_RECT.left + self.margin
+            tmp_bullets1 = list()
+            while x < PLAYAREA_RECT.right - self.margin:
+                tmp_bullets1.append(MiddleCircleBullet((x, y), cl.red))
+                x += self.gap
+            tmp_bullets2 = list()
+            for bullet in tmp_bullets1[:-1]:
+                _x = bullet.pos[0]+self.gap/2
+                _y = bullet.pos[1]+self.gap*math.sqrt(3)/2
+                tmp_bullets2.append(MiddleCircleBullet((_x, _y), cl.blue))
+            bulletss.append(tmp_bullets1)
+            bulletss.append(tmp_bullets2)
+            y += self.gap*math.sqrt(3)
+        self.bullets = sum(bulletss, [])
+        self.exspeed = 0.2
+        self.graze = 100
+    def __call__(self, t, ms, beats):
+        t -= self.t
+        for bullet in self.bullets:
+            if square_dist(self.reimu, bullet) < (self.reimu.radius+bullet.radius+self.graze)**2:
+                bullet.radius += self.exspeed
+        return self.bullets
 
 class LastSpellCard(AbstractSpellCard):
     def __init__(self, t, ms, beats, reimu):
