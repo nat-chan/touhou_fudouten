@@ -361,35 +361,50 @@ class OneSpellCard(AbstractSpellCard):
         return self.bullets+[self.lcc, self.rcc]
 
 
-def hatabullets(p):
-    """パラメタpの畑写像から極小弾を返す"""
+def hata_xyrgbs(p: np.ndarray, calc_rgb=True) -> Tuple[List[Tuple[int,int]], Optional[List[Tuple[int,int,int]]]]:
+    """パラメタpの畑写像から座標と色を返す"""
     zs = hatafast(p)
-    retval = list()
+    xys = list()
+    rgbs = list() if calc_rgb else None
     for i, z in enumerate(zs):
-        rgb = hsv2rgb(i/len(zs), 1, 1)
+        if calc_rgb: rgb = hsv2rgb(i/len(zs), 1, 1)
         xy = z2xy(z)
         X = 2*np.array([-300+220*i for i in range(3)])
         Y = 2*np.array(range(-140, 300, 110))
         for x in X:
             for y in Y:
                 _xy = (xy[0]+x, xy[1]+y)
-                if ( PLAYAREA_RECT.left < _xy[0] < PLAYAREA_RECT.right and
-                     PLAYAREA_RECT.top < _xy[1] < PLAYAREA_RECT.bottom 
-                ):
-                    retval.append(SmallCircleBullet(_xy, rgb))
-    return retval
+                xys.append(_xy)
+                if calc_rgb: rgbs.append(rgb)
+    return xys, rgbs
 class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
         self.name = "相似「葉脈標本」"
         self.params = [pr.はっぱや,pr.くるくる,pr.たちきの,pr.ひしがた]
-    def release(self, t, ms, beats):
+        r = self.intp(t)
+        self.bullets = [SmallCircleBullet(xy, rgb)for xy, rgb in zip(*hata_xyrgbs(r))]
+    def intp(self, t):
         t -= self.t
         T = 70 # 4beat/(190bpm/60sec)*60frame
         p = self.params[(t//T)%len(self.params)]
         q = self.params[(t//T+1)%len(self.params)]
         r = (1-t%T/T)*p+t%T/T*q
-        return hatabullets(r)
+        return r
+    def release(self, t, ms, beats):
+        if t == self.t: return self.bullets
+        r = self.intp(t)
+        xys, _ = hata_xyrgbs(r, calc_rgb=False)
+        tmp_bullets = list()
+        for i, xy in enumerate(xys):
+            self.bullets[i].pos = xy
+            if PLAYAREA_RECT.collidepoint(*xy):
+                tmp_bullets.append(self.bullets[i])
+        return tmp_bullets
+
+    def is_in_rect(self, RECT: pg.Rect) -> bool:
+        return RECT.collidepoint(*self.pos)
+
 class Hata2SpellCard(Hata1SpellCard): #爆発するときに上が安置
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
