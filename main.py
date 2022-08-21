@@ -141,15 +141,9 @@ class MyController: # joystick対応を視野に入れてclass化
 class Reimu:
     """自機のクラス"""
     def __init__(self) -> None:
-        self.pl00 = pg.image.load("data/w2x_pl00.png")
-        self.pl10 = pg.image.load("data/w2x_pl10.png")
         self.pos = np.array((PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.bottom+30))
         self.option = pg.Surface((32, 32), pg.SRCALPHA)
-        self.option.blit(self.pl00, (0, 0), (3*32*2, 3*48*2, 16*2, 16*2))
-        self.sloweffect = pg.Surface((128, 128), pg.SRCALPHA)
-        self.sloweffect.blit(pg.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
-        self.eff_charge = pg.Surface((64, 64), pg.SRCALPHA)
-        self.eff_charge.blit(pg.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
+        self.option.blit(sp.pl00, (0, 0), (3*32*2, 3*48*2, 16*2, 16*2))
         self.bomb_stock = CONFIG["bomb_stock"]
         self.bomb_invincible = False
         self.bomb_invincible_time = 2*60 # ボム無敵時間
@@ -237,7 +231,7 @@ class Reimu:
         else: reimu_offset = 0
 
         screen.blit(
-            self.pl10 if any([self.bomb_invincible, self.hit_invincible, self.spellcard_invincible]) else self.pl00,
+            sp.pl10 if any([self.bomb_invincible, self.hit_invincible, self.spellcard_invincible]) else sp.pl00,
             self.pos-(16*2, 24*2), (0+32*(t//8%4)*2, reimu_offset*48*2, 32*2, 48*2))
         if self.bomb_invincible:
             bomb_radius = self.bomb_invincible_time*(1-(t-self.bomb_lasttime)/self.bomb_invincible_time)
@@ -252,8 +246,8 @@ class Reimu:
 
         angle_sloweffect = t*3%360
         d2 = 2*calc_d(angle_sloweffect)
-        rot_sloweffect = pg.transform.rotate(self.sloweffect, angle_sloweffect)
-        rot_sloweffect2 = pg.transform.rotate(self.sloweffect, -angle_sloweffect)
+        rot_sloweffect = pg.transform.rotate(sp.sloweffect, angle_sloweffect)
+        rot_sloweffect2 = pg.transform.rotate(sp.sloweffect, -angle_sloweffect)
 
         option_pos_lower = np.array([[+16, 32], [-16, 32], [+38, 16], [-38, 16]])*2
         option_pos_upper = np.array([[+8, -30], [-8, -30], [+24, -20], [-24, -20]])*2
@@ -271,7 +265,7 @@ class Reimu:
                 option_pos = option_pos_lower
 
         for o in option_pos:
-            screen.blit(self.eff_charge, self.pos-(32,32)+o, (0, 0, *self.eff_charge.get_size()))
+            screen.blit(sp.eff_charge, self.pos-(32,32)+o, (0, 0, *sp.eff_charge.get_size()))
             screen.blit(rot_option, self.pos-(8*d, 8*d)+o, (0, 0, *rot_option.get_size()))
 
         if self.status.slow.now:
@@ -312,7 +306,6 @@ class StraightBullet(MiddleCircleBullet):
     def update(self):
         self.pos = self.pos + self.speed*self.direction
 
-#release
 ################ ?SP スペルカード ################
 class AbstractSpellCard:
     def __init__(self, t, ms, beats, reimu):
@@ -427,7 +420,7 @@ class ExpansionSpellCard(AbstractSpellCard):
             bulletss.append(tmp_bullets2)
             y += self.gap*math.sqrt(3)
         self.bullets = sum(bulletss, [])
-        self.exspeed = 0.2
+        self.exspeed = [0.2, 0.4][self.phase]
         self.graze = 100
     def release(self, t, ms, beats):
         t -= self.t
@@ -485,12 +478,10 @@ class GameStep(AbstractStep):
         self.fontoffset = 0
         self.fontname = "malgungothic"
         self.font = pg.font.SysFont(self.fontname, self.fontsize)
-        self.bg = pg.image.load("data/bg.png")
-        self.logo = pg.image.load("data/logo.png")
         self.reimu = Reimu()
 
-        self.screen_display.blit(self.bg, (0,0))
-        self.screen_display.blit(self.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
+        self.screen_display.blit(sp.bg, (0,0))
+        self.screen_display.blit(sp.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
         self.gameover = False
         self.beats = Beats([None, None])
         self.spell_card = AbstractSpellCard(0, 0, self.beats, self.reimu)
@@ -508,7 +499,7 @@ class GameStep(AbstractStep):
         elif self.beats.ignite(0,0,3,0): #Aメロ1「闇の中 光る星」
             self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
-            pass
+            self.spell_card.phase += 1
         elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
             self.spell_card = Hata2SpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,0,3): #間奏2
@@ -570,9 +561,6 @@ class TitleStep(AbstractStep):
         super().__init__(screen_display, clock)
         self.screen_description = pg.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height), pg.SRCALPHA)
         self.screen_playarea_color = cl.gray1
-        self.description = pg.image.load("data/description4.png")
-        self.bg = pg.image.load("data/bg.png")
-        self.logo = pg.image.load("data/logo.png")
         self.offset = 0
         self.scroll_speed = 20
 
@@ -583,10 +571,10 @@ class TitleStep(AbstractStep):
             self.offset += self.scroll_speed
         if self.offset < -590: self.offset = -590
         if self.offset > 0: self.offset = 0
-        self.screen_display.blit(self.bg, (0,0))
-        self.screen_display.blit(self.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
-        self.screen_description.blit(self.description, (0,0))
-        self.screen_display.blit(self.description, (BORDER_RECT.left+130, BORDER_RECT.top + self.offset))
+        self.screen_display.blit(sp.bg, (0,0))
+        self.screen_display.blit(sp.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
+        self.screen_description.blit(sp.description, (0,0))
+        self.screen_display.blit(sp.description, (BORDER_RECT.left+130, BORDER_RECT.top + self.offset))
     
 class ConfigStep(AbstractStep):
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
@@ -616,6 +604,15 @@ class MainLoop:
         se.pldead00 = pg.mixer.Sound("data/se_pldead00.wav")
         se.invalid = pg.mixer.Sound("data/se_invalid.wav")
         se.extend = pg.mixer.Sound("data/se_extend.wav")
+        sp.bg = pg.image.load("data/bg.png")
+        sp.logo = pg.image.load("data/logo.png")
+        sp.description = pg.image.load("data/description4.png")
+        sp.pl00 = pg.image.load("data/w2x_pl00.png")
+        sp.pl10 = pg.image.load("data/w2x_pl10.png")
+        sp.sloweffect = pg.Surface((128, 128), pg.SRCALPHA)
+        sp.sloweffect.blit(pg.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
+        sp.eff_charge = pg.Surface((64, 64), pg.SRCALPHA)
+        sp.eff_charge.blit(pg.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
         pg.mixer.music.load("data/Yours.wav")
         pg.mixer.music.play(loops=-1)
 
