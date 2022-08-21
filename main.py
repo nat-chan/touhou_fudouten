@@ -299,44 +299,42 @@ class GameStep:
     def play(self, t: int, controller_input: Dict) -> None:
         self.screen_playarea.fill(self.screen_playarea_color)
         self.screen_info.fill(self.screen_info_color)
-        # テキスト描画処理
-        self.fontoffset = 0
-        self.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
-        self.print(f"fps:{self.clock.get_fps():.2f}")
-        self.print(f"hit: {self.reimu.hit_invincible, t-self.reimu.hit_lasttime-self.reimu.hit_invincible_time}")
-        self.print(f"bomb: {self.reimu.bomb_invincible, t-self.reimu.bomb_lasttime-self.reimu.bomb_invincible_time}")
-        self.print(f"■□♡♥☆★")
-        self.print("こんにちわ世界")
         ms = pg.mixer.music.get_pos() + CONFIG["ms"]
         self.beats = Beats([ms2beat(ms), self.beats[0]])
-        self.print(f"{ms}")
-        self.print(f"{self.beats[0]}")
-        self.print(f"{self.fontname}")
-        for s in beat2squares(self.beats[0]):
-            self.print(s)
-
         # ?SPELLCARD TIME SCHEDULE
         if self.beats.ignite(0,0,0,0) and ms != -1: #再生終了で戻るのを防ぐ
-            self.reimu.guard_spellcard(t)
             self.spell_card = OneSpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,1,0):
-            self.reimu.guard_spellcard(t)
+        elif self.beats.ignite(0,0,1,0): #間奏0
             self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
-#            self.spell_card = HataSpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,2,2): #1サビ
-            self.reimu.guard_spellcard(t)
-            self.spell_card = HataSpellCard2(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,2,3): #間奏後2番Aメロ
-            self.reimu.guard_spellcard(t)
-            self.spell_card = AbstractSpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,1,5): #2サビ
-            self.reimu.guard_spellcard(t)
-            self.spell_card = HataSpellCard3(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,3,7):
-            self.reimu.guard_spellcard(t)
+        elif self.beats.ignite(0,0,3,0): #Aメロ1「闇の中 光る星」
+            pass
+        elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
+            pass
+        elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
+            self.spell_card = Hata2SpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,0,3): #間奏2
+            pass
+        elif self.beats.ignite(0,0,2,3): #Aメロ2「雲を抜け 見える敵」
+            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,2,4): #Bメロ2「避けてゆけばいつかは」
+            pass
+        elif self.beats.ignite(0,0,1,5): #2サビ「現在なら 変えられる」
+            self.spell_card = Hata3SpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,1,6): #間奏3(ドロップ)
+            pass
+        elif self.beats.ignite(0,0,3,6): #3サビ「なんども あきらめた」(転調)
+            self.spell_card = Hata1SpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,1,7): #4サビ「最後は、ふり絞れ」(間を置かず)
+            pass
+        elif self.beats.ignite(0,0,3,7): #間奏4(落ち着く)
             self.spell_card = LastSpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,1,8): #5サビ(ラスト)「まだ見ぬ 未来なら」
+            pass
+        elif self.beats.ignite(0,0,3,8): #終了
+            pass
 
         bullets = self.spell_card(t, ms, self.beats)
+
         self.print(f"bullets: {len(bullets)}")
         is_hit = False
         for bullet in bullets:
@@ -346,6 +344,18 @@ class GameStep:
 
         self.reimu.update(t, controller_input, is_hit)
         self.reimu.draw(t, self.screen_playarea)
+
+        # テキスト描画処理
+        self.fontoffset = 0
+        self.print(f"{self.spell_card.name}")
+        self.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
+        self.print(f"fps:{self.clock.get_fps():.2f}")
+        self.print(f"■□♡♥☆★こんにちわ世界")
+        self.print(f"{ms}")
+        self.print(f"{self.beats[0]}")
+        self.print(f"{self.fontname}")
+        for s in beat2squares(self.beats[0]):
+            self.print(s)
 
         self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
         self.screen_display.blit(self.screen_info, (INFO_RECT.left, INFO_RECT.top))
@@ -391,10 +401,12 @@ class StraightBullet(MiddleCircleBullet):
 
 class AbstractSpellCard:
     def __init__(self, t, ms, beats, reimu):
+        self.name = ""
         self.t = t
         self.ms = ms
         self.beats = beats
         self.reimu = reimu
+        self.reimu.guard_spellcard(t)
     def __call__(self, t, ms, beats):
         return list()
 
@@ -415,9 +427,10 @@ def hatabullets(p):
                 ):
                     retval.append(SmallCircleBullet(_xy, rgb))
     return retval
-class HataSpellCard(AbstractSpellCard): #左右に小回りして避ける
+class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
+        self.name = "相似「葉脈標本」"
         self.params = [pr.はっぱや,pr.くるくる,pr.たちきの,pr.ひしがた]
     def __call__(self, t, ms, beats):
         t -= self.t
@@ -426,13 +439,15 @@ class HataSpellCard(AbstractSpellCard): #左右に小回りして避ける
         q = self.params[(t//T+1)%len(self.params)]
         r = (1-t%T/T)*p+t%T/T*q
         return hatabullets(r)
-class HataSpellCard2(HataSpellCard): #爆発するときに上が安置
+class Hata2SpellCard(Hata1SpellCard): #爆発するときに上が安置
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
+        self.name = "相似「破られた手紙」"
         self.params = [pr.さんかく,pr.おてがみ,pr.せきへん,pr.かこまれ]
-class HataSpellCard3(HataSpellCard): #難しい、小刻みに右斜め下にもぐりこむ
+class Hata3SpellCard(Hata1SpellCard): #難しい、小刻みに右斜め下にもぐりこむ
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
+        self.name = "相似「龍の霊廟」"
         self.params = [pr.ひびわれ,pr.みつびし,pr.ドラゴン,pr.くろすい]
 
 def r() -> float:
@@ -441,6 +456,7 @@ def r() -> float:
 class OneSpellCard(AbstractSpellCard):
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
+        self.name = "第１通常"
         self.bullets = list()
         self.margin = 100
         self.color = cl.red
@@ -510,6 +526,7 @@ class ExpansionSpellCard(AbstractSpellCard):
 class LastSpellCard(AbstractSpellCard):
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
+        self.name = "着陸「431光年の旅路」"
         self.center1 = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top*.5+PLAYAREA_RECT.bottom*.5])
         self.center2 = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top-100])
         self.way = 18 
