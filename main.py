@@ -19,6 +19,7 @@ BPM = 190
 DISPLAY_RECT = pg.Rect(0, 0, 1280, 960)
 BORDER_RECT = pg.Rect(62, 30, 834-62, 930-30)
 PLAYAREA_RECT = pg.Rect(0, 0, 2*386, 2*450)
+PLAYAREA_CENTER = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top*.5+PLAYAREA_RECT.bottom*.5])
 INFO_RECT = pg.Rect(834+30, 30, 1280-834-2*30, 500)
 
 cl = Dict(pg.colordict.THECOLORS) # https://www.pygame.org/docs/ref/color_list.html
@@ -41,6 +42,39 @@ pr = Dict(
     おてがみ=np.array([0, 0, 0, 0.7071, 0, 0, -0.5, 0], dtype=np.float64),
     はじっこ=np.array([0, 0, 0, -0.5, 0.8, 0, 0, 0], dtype=np.float64),
 )
+
+def lifegame_step(a):
+    DH = (-1,-1,-1,0,0,1,1,1)
+    DW = (-1,0,1,-1,1,-1,0,1)
+    H = len(a); W = len(a[0])
+    b = [[False]*W for _ in range(H)]
+    for h in range(1, H-1):
+        for w in range(1, W-1):
+            s = sum(a[h+dh][w+dw] for dh, dw in zip(DH, DW))
+            if a[h][w] and 1 < s < 4 or not a[h][w] and s == 3:
+                b[h][w] = True
+    return b
+
+def lifegame_str2mat(lines, pad=1):
+    W = len(lines[0])
+    out = [[False]*(W+2*pad) for _ in range(pad)]
+    out += [[False]*pad+[l == "X" for l in line]+[False]*pad for line in lines]
+    out += [[False]*(W+2*pad) for _ in range(pad)]
+    return out
+def lifegame_mat2str(lines):
+    return ["".join("X" if l else "." for l in line) for line in lines]
+
+GALAXY = [lifegame_str2mat([
+"XXXXXX.XX",
+"XXXXXX.XX",
+".......XX",
+"XX.....XX",
+"XX.....XX",
+"XX.....XX",
+"XX.......",
+"XX.XXXXXX",
+"XX.XXXXXX"],pad=3)]
+for i in range(7): GALAXY.append(lifegame_step(GALAXY[i]))
 
 ################ ?HE 補助関数群 ################
 def hatafast(p: np.ndarray, rep=2) -> np.ndarray:
@@ -80,13 +114,17 @@ def calc_d(angle: float) -> float:
 
 # beat(拍数)関連の補助関数
 beat_t = Tuple[int, int, int, int]
+def beat2count(beat: beat_t) -> int:
+    return beat[0]+4*beat[1]+16*beat[2]+64*beat[3]
+def count2beat(count: int) -> beat_t:
+    return (count%4, count//4%4, count//16%4, count//64)
 def ms2beat(ms: int) -> beat_t:
     count = int(BPM/(60*1000)*ms)
-    beat = (count%4, count//4%4, count//16%4, count//64)
+    beat = count2beat(count)
     assert beat[0]+4*beat[1]+16*beat[2]+64*beat[3] == count
     return beat
 def beat2ms(beat: beat_t) -> int:
-    count = beat[0]+4*beat[1]+16*beat[2]+64*beat[3]
+    count = beat2count(beat)
     ms = count/(BPM/(60*1000))
     return ms
 def beat2squares(beat: beat_t) -> List[str]:
@@ -236,8 +274,6 @@ class Reimu:
             screen.blit(rot_sloweffect, self.pos-(32*d2, 32*d2), (0, 0, *rot_sloweffect.get_size()))
             screen.blit(rot_sloweffect2, self.pos-(32*d2, 32*d2), (0, 0, *rot_sloweffect.get_size()))
 
-
-
     def draw_lower(self, t: int, screen: pg.Surface) -> None:
         """Surfaceへの自機の描画 (弾より下のレイヤー)"""
         if self.status.left.now: reimu_offset = 1
@@ -279,11 +315,9 @@ class Reimu:
 
 
 ################ ?DA 弾幕 ################
-class AbstractBullet:
+class  AbstractBullet:
     def __init__(self, pos, radius) -> None:
         self.pos = pos; self.radius = radius
-    def is_in_rect(self, RECT: pg.Rect) -> bool:
-        return RECT.collidepoint(*self.pos)
     def draw(self, screen: pg.Surface) -> None: pass
 class CircleBullet(AbstractBullet):
     def __init__(self, pos, radius, border, color) -> None:
@@ -292,14 +326,9 @@ class CircleBullet(AbstractBullet):
     def draw(self, screen):
         pg.draw.circle(screen, cl.white, self.pos, self.radius+self.border)
         pg.draw.circle(screen, self.color, self.pos, self.radius+self.border, self.border)
-class SmallCircleBullet:
-    # 弾数が2000近くになると60fpsを保てなくなるので継承は省く
-    def __init__(self, pos, rgb):
-        self.pos = pos; self.rgb = rgb
-        self.radius = 2 # 外周の色部分には判定なし
-    def draw(self, screen):
-        pg.draw.circle(screen, (255, 255, 255), self.pos, 4)
-        pg.draw.circle(screen, self.rgb, self.pos, 4, 2)
+class SmallCircleBullet(CircleBullet):
+    def __init__(self, pos, color):
+        super().__init__(pos=pos, radius=2, border=2, color=color)
 class MiddleCircleBullet(CircleBullet):
     def __init__(self, pos, color):
         super().__init__(pos=pos, radius=10, border=3, color=color)
@@ -310,9 +339,14 @@ class StraightBullet(MiddleCircleBullet):
         self.speed = speed
     def update(self):
         self.pos = self.pos + self.speed*self.direction
+class SquareBullet(AbstractBullet):
+    def __init__(self, pos, radius):
+        super().__init__(pos=pos, radius=radius)
+    def draw(self, screen):
+        pg.draw.rect(screen, cl.white, (self.pos[0]-self.radius, self.pos[1]-self.radius, self.radius*2, self.radius*2))
+#        pg.draw.circle(screen, cl.cyan, self.pos, self.radius)
 
 ################ ?SP スペルカード ################
-
 class AbstractSpellCard:
     def __init__(self, t, ms, beats, reimu):
         self.name = ""
@@ -386,7 +420,7 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
         self.bullets = [SmallCircleBullet(xy, rgb)for xy, rgb in zip(*hata_xyrgbs(r))]
     def intp(self, t):
         t -= self.t
-        T = 70 # 4beat/(190bpm/60sec)*60frame
+        T = 75 # 4beat/(190bpm/60sec)*60frame
         p = self.params[(t//T)%len(self.params)]
         q = self.params[(t//T+1)%len(self.params)]
         r = (1-t%T/T)*p+t%T/T*q
@@ -447,12 +481,122 @@ class ExpansionSpellCard(AbstractSpellCard):
             if square_dist(self.reimu, bullet) < (self.reimu.radius+bullet.radius+self.graze)**2:
                 bullet.radius += self.exspeed
         return self.bullets
+    
+class Interpolation:
+    def __init__(
+            self,
+            start_beat=(0, 1, 3, 0),
+            end_beat=(0,2,3,0),
+            start_pos=PLAYAREA_CENTER-(PLAYAREA_RECT.width/4-PLAYAREA_RECT.width/13/2, +PLAYAREA_RECT.height/2),
+            end_pos=PLAYAREA_CENTER-(PLAYAREA_RECT.width/4-PLAYAREA_RECT.width/13/2, 0),
+        ):
+            self.start_ms = beat2ms(start_beat)
+            self.end_ms = beat2ms(end_beat)
+            self.start_pos = start_pos
+            self.end_pos = end_pos
+    def __call__(self, ms):
+            p = (ms-self.start_ms)/(self.end_ms-self.start_ms)
+            return (1-p)*self.start_pos+p*self.end_pos
+
+class GalaxySpellCard(AbstractSpellCard):
+    def __init__(self, t, ms, beats, reimu):
+        super().__init__(t, ms, beats, reimu)
+        self.name = "銀河「ライフゲ-ム」"
+        self.gap = PLAYAREA_RECT.width/13
+        self.radius = self.gap/2
+        self.grid = [[PLAYAREA_CENTER + (self.gap*x, self.gap*y) for x in range(-6, 7)]for y in range(-6, 7)]
+        self.reimu.pos = PLAYAREA_CENTER.copy()
+        self.gb = [list() for _ in range(8)]
+        for i in range(8):
+            for x in range(13):
+                for y in range(13):
+                    if GALAXY[i][x+1][y+1]:
+                        self.gb[i].append(SquareBullet(self.grid[x][y], self.radius))
+        self.bullets = self.gb[1]
+        self.intps = list()
+        self.planets = list()
+        self.set_intp((0,0,3,0), 0,0,0)
+        self.set_intp((0,2,3,0), 0,0,1)
+        self.set_intp((0,0,0,1), 0,1,0)
+        self.set_intp((0,2,0,1), 0,1,1)
+        self.set_intp((0,0,1,1), 1,0,0)
+        self.set_intp((0,2,1,1), 1,0,1)
+        self.set_intp((0,0,2,1), 1,1,0)
+        self.set_intp((0,2,2,1), 1,1,1)
+        self.set_intp((0,0,3,1), 0,0,0); self.set_intp((0, 0, 3, 1), 1,0,0)
+        self.set_intp((0,2,3,1), 0,0,1); self.set_intp((0, 2, 3, 1), 1,0,1)
+
+        self.set_intp((0,0,0,2), 0,1,1); self.set_intp((0, 0, 0, 2), 1,1,0)
+        self.set_intp((0,2,0,2), 0,1,0); self.set_intp((0, 2, 0, 2), 1,1,1)
+
+        self.set_intp((0,0,1,2), 1,0,0); self.set_intp((0, 0, 1, 2), 0,0,0)
+        self.set_intp((0,2,1,2), 1,0,1); self.set_intp((0, 2, 1, 2), 0,0,1)
+    def set_intp(self, beat, vertical, from_up, up):
+        start_beat = count2beat(beat2count(beat)-2)
+        scale = [PLAYAREA_RECT.width, PLAYAREA_RECT.height][vertical]
+        end_pos = PLAYAREA_CENTER-(2*up-1)*np.array([0, scale/4-self.gap/2][::2*vertical-1])
+        start_pos = end_pos - (2*from_up-1)*np.array([scale/2, 0][::2*vertical-1])
+        self.intps.append( Interpolation(start_beat, beat, start_pos, end_pos) )
+        self.planets.append( CircleBullet(pos=start_pos, radius=scale/4, border=2, color=cl.red) )
+
+    def release(self, t, ms, beats):
+        for i in range(4):
+            for j in [0, 2]:
+                if beats.ignite(i,j,None,None):
+                    self.bullets = self.gb[(i+1)%8]
+            for j in [1, 3]:
+                if beats.ignite(i,j,None,None):
+                    self.bullets = self.gb[(4+i+1)%8]
+        for planet, intp in zip(self.planets, self.intps):
+            planet.pos = intp(ms)
+        scale = PLAYAREA_RECT.width/4
+        radius = PLAYAREA_RECT.width/3-6
+        if beats.ignite(0,3,1,2):
+            self.planets.append( CircleBullet(pos=PLAYAREA_CENTER+(-scale, -scale), radius=radius, border=2, color=cl.red) )
+        if beats.ignite(1,3,1,2):
+            self.planets.append( CircleBullet(pos=PLAYAREA_CENTER+(scale, -scale), radius=radius, border=2, color=cl.red) )
+        if beats.ignite(2,3,1,2):
+            self.planets.append( CircleBullet(pos=PLAYAREA_CENTER+(scale, scale), radius=radius, border=2, color=cl.red) )
+        if beats.ignite(3,3,1,2):
+            self.planets.append( CircleBullet(pos=PLAYAREA_CENTER+(-scale, scale), radius=radius, border=2, color=cl.red) )
+
+        return self.bullets+self.planets
+"""
+一個前
+r (0, 0, 3, 0) # 無理
+l (0, 2, 3, 0) 左↓
+r (0, 0, 0, 1) 右↓
+l (0, 2, 0, 1) 左↑
+r (0, 0, 1, 1) 右↑
+l (0, 2, 1, 1) 左↓
+r (0, 0, 2, 1) 右↑
+l (0, 2, 2, 1) 左↓
+
+r (0, 0, 3, 1) 上→
+l (0, 2, 3, 1) 下←
+r (0, 0, 0, 2) 上←
+l (0, 2, 0, 2) 下→
+r (0, 0, 1, 2) 上→
+l (0, 2, 1, 2) 下←
+
+
+
+
+
+ 
+
+
+
+
+
+"""
+
 
 class LastSpellCard(AbstractSpellCard):
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
         self.name = "着陸「431光年の旅路」"
-        self.center1 = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top*.5+PLAYAREA_RECT.bottom*.5])
+        self.center1 = PLAYAREA_CENTER
         self.center2 = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top-100])
         self.way = 18 
         self.earth_radius = 50
@@ -517,7 +661,7 @@ class GameStep(AbstractStep):
         elif self.beats.ignite(0,0,1,0): #間奏0
             self.spell_card.phase += 1
         elif self.beats.ignite(0,0,3,0): #Aメロ1「闇の中 光る星」
-            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = GalaxySpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
             self.spell_card.phase += 1
         elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
