@@ -42,7 +42,7 @@ pr = Dict(
     はじっこ=np.array([0, 0, 0, -0.5, 0.8, 0, 0, 0], dtype=np.float64),
 )
 
-################ 補助関数群 ################
+################ ?HE 補助関数群 ################
 def hatafast(p: np.ndarray, rep=2) -> np.ndarray:
     """畑写像を高速に計算"""
     z = np.array([[1, 1, 1]], dtype=np.float64)
@@ -104,7 +104,9 @@ def check_hit(a, b) -> bool:
     """被弾判定、東方は円どうしの交点が直交するまで重なるが特に考慮せずに通常の判定"""
     return square_dist(a, b) < (a.radius+b.radius)**2
 
-################ メインクラス群 ################
+def r() -> float: return 2*np.pi*random()
+
+################ ?MI メインクラス群 ################
 class Status:
     """時機の現在の状態"""
     KEY = ["left", "right", "up", "down", "slow", "shot", "bomb"]
@@ -134,6 +136,7 @@ class MyController: # joystick対応を視野に入れてclass化
             retry=keys[pg.K_r],
         )
 
+################ ?RE 霊夢(自機) ################
 class Reimu:
     """自機のクラス"""
     def __init__(self) -> None:
@@ -274,99 +277,8 @@ class Reimu:
             screen.blit(rot_sloweffect, self.pos-(32*d2, 32*d2), (0, 0, *rot_sloweffect.get_size()))
             screen.blit(rot_sloweffect2, self.pos-(32*d2, 32*d2), (0, 0, *rot_sloweffect.get_size()))
 
-class GameStep:
-    def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
-        self.screen_display = screen_display
-        self.clock = clock
-        self.screen_playarea = pg.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height))
-        self.screen_playarea_color = cl.gray1
-        self.screen_info = pg.Surface((INFO_RECT.width, INFO_RECT.height))
-        self.screen_info_color = cl.darkblue
-        self.fontsize = 30
-        self.fontoffset = 0
-        self.fontname = "malgungothic"
-        self.font = pg.font.SysFont(self.fontname, self.fontsize)
-        self.bg = pg.image.load("data/bg.png")
-        self.logo = pg.image.load("data/logo.png")
-        self.reimu = Reimu()
 
-        self.screen_display.blit(self.bg, (0,0))
-        self.screen_display.blit(self.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
-        self.gameover = False
-        self.beats = Beats([None, None])
-        self.spell_card = AbstractSpellCard(0, 0, self.beats, self.reimu)
-
-    def play(self, t: int, controller_input: Dict) -> None:
-        self.screen_playarea.fill(self.screen_playarea_color)
-        self.screen_info.fill(self.screen_info_color)
-        ms = pg.mixer.music.get_pos() + CONFIG["ms"]
-        self.beats = Beats([ms2beat(ms), self.beats[0]])
-        # ?SPELLCARD TIME SCHEDULE
-        if self.beats.ignite(0,0,0,0) and ms != -1: #再生終了で戻るのを防ぐ
-            self.spell_card = OneSpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,1,0): #間奏0
-            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,3,0): #Aメロ1「闇の中 光る星」
-            pass
-        elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
-            pass
-        elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
-            self.spell_card = Hata2SpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,0,3): #間奏2
-            pass
-        elif self.beats.ignite(0,0,2,3): #Aメロ2「雲を抜け 見える敵」
-            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,2,4): #Bメロ2「避けてゆけばいつかは」
-            pass
-        elif self.beats.ignite(0,0,1,5): #2サビ「現在なら 変えられる」
-            self.spell_card = Hata3SpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,1,6): #間奏3(ドロップ)
-            pass
-        elif self.beats.ignite(0,0,3,6): #3サビ「なんども あきらめた」(転調)
-            self.spell_card = Hata1SpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,1,7): #4サビ「最後は、ふり絞れ」(間を置かず)
-            pass
-        elif self.beats.ignite(0,0,3,7): #間奏4(落ち着く)
-            self.spell_card = LastSpellCard(t, ms, self.beats, self.reimu)
-        elif self.beats.ignite(0,0,1,8): #5サビ(ラスト)「まだ見ぬ 未来なら」
-            pass
-        elif self.beats.ignite(0,0,3,8): #終了
-            pass
-
-        bullets = self.spell_card(t, ms, self.beats)
-
-        self.print(f"bullets: {len(bullets)}")
-        is_hit = False
-        for bullet in bullets:
-            bullet.draw(self.screen_playarea)
-            if check_hit(self.reimu, bullet) and not is_hit and not controller_input.shot:
-                is_hit = True
-
-        self.reimu.update(t, controller_input, is_hit)
-        self.reimu.draw(t, self.screen_playarea)
-
-        # テキスト描画処理
-        self.fontoffset = 0
-        self.print(f"{self.spell_card.name}")
-        self.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
-        self.print(f"fps:{self.clock.get_fps():.2f}")
-        self.print(f"■□♡♥☆★こんにちわ世界")
-        self.print(f"{ms}")
-        self.print(f"{self.beats[0]}")
-        self.print(f"{self.fontname}")
-        for s in beat2squares(self.beats[0]):
-            self.print(s)
-
-        self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
-        self.screen_display.blit(self.screen_info, (INFO_RECT.left, INFO_RECT.top))
-        pg.draw.rect(self.screen_display, cl.green, BORDER_RECT, 2)
-    
-    def print(self, txt: str) -> None:
-        """INFOエリアにテキストを描画"""
-        self.screen_info.blit(self.font.render(txt, True, cl.white), (0, self.fontoffset))
-        self.fontoffset += self.fontsize
-
-################ 弾幕とスペルカード ################
+################ ?DA 弾幕 ################
 class AbstractBullet:
     def __init__(self, pos, radius) -> None:
         self.pos = pos; self.radius = radius
@@ -399,6 +311,8 @@ class StraightBullet(MiddleCircleBullet):
     def update(self):
         self.pos = self.pos + self.speed*self.direction
 
+#release
+################ ?SP スペルカード ################
 class AbstractSpellCard:
     def __init__(self, t, ms, beats, reimu):
         self.name = ""
@@ -449,9 +363,6 @@ class Hata3SpellCard(Hata1SpellCard): #難しい、小刻みに右斜め下に�
         super().__init__(t, ms, beats, reimu)
         self.name = "相似「龍の霊廟」"
         self.params = [pr.ひびわれ,pr.みつびし,pr.ドラゴン,pr.くろすい]
-
-def r() -> float:
-    return 2*np.pi*random()
 
 class OneSpellCard(AbstractSpellCard):
     def __init__(self, t, ms, beats, reimu):
@@ -555,6 +466,99 @@ class LastSpellCard(AbstractSpellCard):
                 )
         return self.lwind+self.rwind
 
+################ ?ST プレイ中の各ステップ ################
+class GameStep:
+    def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
+        self.screen_display = screen_display
+        self.clock = clock
+        self.screen_playarea = pg.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height))
+        self.screen_playarea_color = cl.gray1
+        self.screen_info = pg.Surface((INFO_RECT.width, INFO_RECT.height))
+        self.screen_info_color = cl.darkblue
+        self.fontsize = 30
+        self.fontoffset = 0
+        self.fontname = "malgungothic"
+        self.font = pg.font.SysFont(self.fontname, self.fontsize)
+        self.bg = pg.image.load("data/bg.png")
+        self.logo = pg.image.load("data/logo.png")
+        self.reimu = Reimu()
+
+        self.screen_display.blit(self.bg, (0,0))
+        self.screen_display.blit(self.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
+        self.gameover = False
+        self.beats = Beats([None, None])
+        self.spell_card = AbstractSpellCard(0, 0, self.beats, self.reimu)
+
+    def play(self, t: int, controller_input: Dict) -> None:
+        self.screen_playarea.fill(self.screen_playarea_color)
+        self.screen_info.fill(self.screen_info_color)
+        ms = pg.mixer.music.get_pos() + CONFIG["ms"]
+        self.beats = Beats([ms2beat(ms), self.beats[0]])
+################ ?TI タイムスケジュール ################
+        if self.beats.ignite(0,0,0,0) and ms != -1: #再生終了で戻るのを防ぐ
+            self.spell_card = OneSpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,1,0): #間奏0
+            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,3,0): #Aメロ1「闇の中 光る星」
+            pass
+        elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
+            pass
+        elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
+            self.spell_card = Hata2SpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,0,3): #間奏2
+            pass
+        elif self.beats.ignite(0,0,2,3): #Aメロ2「雲を抜け 見える敵」
+            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,2,4): #Bメロ2「避けてゆけばいつかは」
+            pass
+        elif self.beats.ignite(0,0,1,5): #2サビ「現在なら 変えられる」
+            self.spell_card = Hata3SpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,1,6): #間奏3(ドロップ)
+            pass
+        elif self.beats.ignite(0,0,3,6): #3サビ「なんども あきらめた」(転調)
+            self.spell_card = Hata1SpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,1,7): #4サビ「最後は、ふり絞れ」(間を置かず)
+            pass
+        elif self.beats.ignite(0,0,3,7): #間奏4(落ち着く)
+            self.spell_card = LastSpellCard(t, ms, self.beats, self.reimu)
+        elif self.beats.ignite(0,0,1,8): #5サビ(ラスト)「まだ見ぬ 未来なら」
+            pass
+        elif self.beats.ignite(0,0,3,8): #終了
+            pass
+
+        bullets = self.spell_card(t, ms, self.beats)
+
+        self.print(f"bullets: {len(bullets)}")
+        is_hit = False
+        for bullet in bullets:
+            bullet.draw(self.screen_playarea)
+            if check_hit(self.reimu, bullet) and not is_hit and not controller_input.shot:
+                is_hit = True
+
+        self.reimu.update(t, controller_input, is_hit)
+        self.reimu.draw(t, self.screen_playarea)
+
+        # テキスト描画処理
+        self.fontoffset = 0
+        self.print(f"{self.spell_card.name}")
+        self.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
+        self.print(f"fps:{self.clock.get_fps():.2f}")
+        self.print(f"■□♡♥☆★こんにちわ世界")
+        self.print(f"{ms}")
+        self.print(f"{self.beats[0]}")
+        self.print(f"{self.fontname}")
+        for s in beat2squares(self.beats[0]):
+            self.print(s)
+
+        self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
+        self.screen_display.blit(self.screen_info, (INFO_RECT.left, INFO_RECT.top))
+        pg.draw.rect(self.screen_display, cl.green, BORDER_RECT, 2)
+    
+    def print(self, txt: str) -> None:
+        """INFOエリアにテキストを描画"""
+        self.screen_info.blit(self.font.render(txt, True, cl.white), (0, self.fontoffset))
+        self.fontoffset += self.fontsize
+
 class TitleStep:
     def __init__(self, screen: pg.Surface, clock: pg.time.Clock) -> None:
         self.screen_display = screen
@@ -589,8 +593,8 @@ class TitleStep:
         self.screen_description.blit(self.description, (0,0))
         self.screen_display.blit(self.description, (BORDER_RECT.left+130, BORDER_RECT.top + self.offset))
 
-
-class GameMainLoop:
+################ ?MA メインループ ################
+class MainLoop:
     def __init__(self) -> None:
         pg.init()
         pg.display.set_caption("東方不動点")
@@ -663,5 +667,5 @@ if __name__ == "__main__":
     CONFIG["ms"] = math.ceil(beat2ms(CONFIG["beat"]))
     print(CONFIG["beat"], CONFIG["ms"], ms2beat(CONFIG["ms"]), ms2beat(math.floor(CONFIG["ms"])), ms2beat(math.ceil(CONFIG["ms"])), ms2beat(round(CONFIG["ms"])))
     assert CONFIG["beat"] == ms2beat(CONFIG["ms"])
-    game_main_loop = GameMainLoop()
-    game_main_loop.main()
+    main_loop = MainLoop()
+    main_loop.main()
