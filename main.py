@@ -10,6 +10,7 @@ from random import random
 
 
 class se: pass #se用の名前空間
+class sp: pass #sprite用の名前空間
 class Dict(addict_dict):
     def at(self, k: int) -> Any:
         return self[list(self.keys())[k]]
@@ -320,8 +321,9 @@ class AbstractSpellCard:
         self.ms = ms
         self.beats = beats
         self.reimu = reimu
+        self.phase = 0
         self.reimu.guard_spellcard(t)
-    def __call__(self, t, ms, beats):
+    def release(self, t, ms, beats):
         return list()
 
 def hatabullets(p):
@@ -346,7 +348,7 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
         super().__init__(t, ms, beats, reimu)
         self.name = "相似「葉脈標本」"
         self.params = [pr.はっぱや,pr.くるくる,pr.たちきの,pr.ひしがた]
-    def __call__(self, t, ms, beats):
+    def release(self, t, ms, beats):
         t -= self.t
         T = 70 # 4beat/(190bpm/60sec)*60frame
         p = self.params[(t//T)%len(self.params)]
@@ -375,7 +377,7 @@ class OneSpellCard(AbstractSpellCard):
         self.rc = np.array([PLAYAREA_RECT.right-self.margin, PLAYAREA_RECT.top+self.margin])
         self.way = 32
 
-    def __call__(self, t, ms, beats):
+    def release(self, t, ms, beats):
         self.lc += (0, 1)
         self.rc += (0, 1)
         self.lcc = MiddleCircleBullet(self.lc, self.color)
@@ -427,7 +429,7 @@ class ExpansionSpellCard(AbstractSpellCard):
         self.bullets = sum(bulletss, [])
         self.exspeed = 0.2
         self.graze = 100
-    def __call__(self, t, ms, beats):
+    def release(self, t, ms, beats):
         t -= self.t
         for bullet in self.bullets:
             if square_dist(self.reimu, bullet) < (self.reimu.radius+bullet.radius+self.graze)**2:
@@ -446,7 +448,7 @@ class LastSpellCard(AbstractSpellCard):
         self.const = 1
         self.gap = 70
         self.gain = self.cspeed/100
-    def __call__(self, t, ms, beats):
+    def release(self, t, ms, beats):
         t -= self.t
         T = 60*10
         if T < t:
@@ -467,10 +469,14 @@ class LastSpellCard(AbstractSpellCard):
         return self.lwind+self.rwind
 
 ################ ?ST プレイ中の各ステップ ################
-class GameStep:
+class AbstractStep:
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
-        self.screen_display = screen_display
-        self.clock = clock
+        self.screen_display = screen_display; self.clock = clock
+    def play(self, t: int, controller_input: Dict) -> None: pass
+
+class GameStep(AbstractStep):
+    def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
+        super().__init__(screen_display, clock)
         self.screen_playarea = pg.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height))
         self.screen_playarea_color = cl.gray1
         self.screen_info = pg.Surface((INFO_RECT.width, INFO_RECT.height))
@@ -498,9 +504,9 @@ class GameStep:
         if self.beats.ignite(0,0,0,0) and ms != -1: #再生終了で戻るのを防ぐ
             self.spell_card = OneSpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,1,0): #間奏0
-            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card.phase += 1
         elif self.beats.ignite(0,0,3,0): #Aメロ1「闇の中 光る星」
-            pass
+            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
             pass
         elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
@@ -526,7 +532,7 @@ class GameStep:
         elif self.beats.ignite(0,0,3,8): #終了
             pass
 
-        bullets = self.spell_card(t, ms, self.beats)
+        bullets = self.spell_card.release(t, ms, self.beats)
 
         self.print(f"bullets: {len(bullets)}")
         is_hit = False
@@ -559,10 +565,9 @@ class GameStep:
         self.screen_info.blit(self.font.render(txt, True, cl.white), (0, self.fontoffset))
         self.fontoffset += self.fontsize
 
-class TitleStep:
-    def __init__(self, screen: pg.Surface, clock: pg.time.Clock) -> None:
-        self.screen_display = screen
-        self.clock = clock
+class TitleStep(AbstractStep):
+    def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
+        super().__init__(screen_display, clock)
         self.screen_description = pg.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height), pg.SRCALPHA)
         self.screen_playarea_color = cl.gray1
         self.description = pg.image.load("data/description4.png")
@@ -578,8 +583,16 @@ class TitleStep:
             self.offset += self.scroll_speed
         if self.offset < -590: self.offset = -590
         if self.offset > 0: self.offset = 0
-        global CONFIG
-
+        self.screen_display.blit(self.bg, (0,0))
+        self.screen_display.blit(self.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
+        self.screen_description.blit(self.description, (0,0))
+        self.screen_display.blit(self.description, (BORDER_RECT.left+130, BORDER_RECT.top + self.offset))
+    
+class ConfigStep(AbstractStep):
+    def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
+        super().__init__(screen_display, clock)
+        self.screen_display.fill(cl.black)
+    def play(self, t: int, controller_input: Dict) -> None:
         if controller_input.left:
             CONFIG["bomb_stock"] -= 1
             se.ok00.play()
@@ -587,11 +600,6 @@ class TitleStep:
             CONFIG["bomb_stock"] += 1
             se.ok00.play()
         if CONFIG["bomb_stock"] < 0: CONFIG["bomb_stock"] = 0
-
-        self.screen_display.blit(self.bg, (0,0))
-        self.screen_display.blit(self.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
-        self.screen_description.blit(self.description, (0,0))
-        self.screen_display.blit(self.description, (BORDER_RECT.left+130, BORDER_RECT.top + self.offset))
 
 ################ ?MA メインループ ################
 class MainLoop:
@@ -607,6 +615,7 @@ class MainLoop:
         se.slash = pg.mixer.Sound("data/se_slash.wav")
         se.pldead00 = pg.mixer.Sound("data/se_pldead00.wav")
         se.invalid = pg.mixer.Sound("data/se_invalid.wav")
+        se.extend = pg.mixer.Sound("data/se_extend.wav")
         pg.mixer.music.load("data/Yours.wav")
         pg.mixer.music.play(loops=-1)
 
@@ -626,12 +635,22 @@ class MainLoop:
         pg.mixer.music.stop()
         pg.mixer.music.rewind()
         pg.mixer.music.play(loops=-1)
-        self.game_step = GameStep(self.screen_display, self.clock)
+        self.title_step = TitleStep(self.screen_display, self.clock)
         se.cancel00.play()
+
+    def go_to_config(self) -> None:
+        self.current_step = ConfigStep
+        pg.mixer.music.load("data/IMP.ogg")
+        pg.mixer.music.stop()
+        pg.mixer.music.rewind()
+        pg.mixer.music.play(loops=-1)
+        self.config_step = ConfigStep(self.screen_display, self.clock)
+        se.extend.play()
 
     def main(self) -> None:
         self.game_step = GameStep(self.screen_display, self.clock)
         self.title_step = TitleStep(self.screen_display, self.clock)
+        self.config_step = ConfigStep(self.screen_display, self.clock)
         self.t = 0
         while True:
             controller_input = self.controller.check_input()
@@ -642,8 +661,12 @@ class MainLoop:
                     and not self.game_step.reimu.hit_invincible
                 ):
                     self.back_to_title()
-            else:
+            elif self.current_step == TitleStep:
                 self.title_step.play(self.t, controller_input)
+            elif self.current_step == ConfigStep:
+                self.config_step.play(self.t, controller_input)
+            else:
+                print("game_step error")
             self.clock.tick(60)
             pg.display.update()
 
@@ -655,6 +678,8 @@ class MainLoop:
                         self.restart_game()
                     if event.key == pg.K_ESCAPE:
                         self.back_to_title()
+                    if event.key == pg.K_z and self.current_step == TitleStep:
+                        self.go_to_config()
             self.t += 1
 
 if __name__ == "__main__":
