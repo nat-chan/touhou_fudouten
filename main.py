@@ -20,6 +20,8 @@ DISPLAY_RECT = pg.Rect(0, 0, 1280, 960)
 BORDER_RECT = pg.Rect(62, 30, 834-62, 930-30)
 PLAYAREA_RECT = pg.Rect(0, 0, 2*386, 2*450)
 PLAYAREA_CENTER = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top*.5+PLAYAREA_RECT.bottom*.5])
+PLAYAREA_MARGIN = 40
+DEFAULT_POS = np.array((PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.bottom+PLAYAREA_MARGIN))
 INFO_RECT = pg.Rect(834+30, 30, 1280-834-2*30, 500)
 
 cl = Dict(pg.colordict.THECOLORS) # https://www.pygame.org/docs/ref/color_list.html
@@ -181,7 +183,7 @@ class MyController: # joystick対応を視野に入れてclass化
 class Reimu:
     """自機のクラス"""
     def __init__(self) -> None:
-        self.pos = np.array((PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.bottom+30))
+        self.pos = DEFAULT_POS.copy()
         self.option = pg.Surface((32, 32), pg.SRCALPHA)
         self.option.blit(sp.pl00, (0, 0), (3*32*2, 3*48*2, 16*2, 16*2))
         self.bomb_stock = CONFIG["bomb_stock"]
@@ -215,11 +217,10 @@ class Reimu:
         elif controller_input.down:  self.pos[1] += speed
         
         # 画面外脱出防止
-        mergin = 40
-        if self.pos[0] < PLAYAREA_RECT.left+mergin:   self.pos[0] = PLAYAREA_RECT.left+mergin
-        if self.pos[0] > PLAYAREA_RECT.right-mergin:  self.pos[0] = PLAYAREA_RECT.right-mergin
-        if self.pos[1] < PLAYAREA_RECT.top+mergin:    self.pos[1] = PLAYAREA_RECT.top+mergin
-        if self.pos[1] > PLAYAREA_RECT.bottom-mergin: self.pos[1] = PLAYAREA_RECT.bottom-mergin
+        if self.pos[0] < PLAYAREA_RECT.left+PLAYAREA_MARGIN:   self.pos[0] = PLAYAREA_RECT.left+PLAYAREA_MARGIN
+        if self.pos[0] > PLAYAREA_RECT.right-PLAYAREA_MARGIN:  self.pos[0] = PLAYAREA_RECT.right-PLAYAREA_MARGIN
+        if self.pos[1] < PLAYAREA_RECT.top+PLAYAREA_MARGIN:    self.pos[1] = PLAYAREA_RECT.top+PLAYAREA_MARGIN
+        if self.pos[1] > PLAYAREA_RECT.bottom-PLAYAREA_MARGIN: self.pos[1] = PLAYAREA_RECT.bottom-PLAYAREA_MARGIN
 
         # 通常のボムの処理
         if ( self.status["bomb"].now and 0 < self.bomb_stock 
@@ -348,8 +349,8 @@ class SquareBullet(AbstractBullet):
 
 ################ ?SP スペルカード ################
 class AbstractSpellCard:
+    ""# docstringをスペカ名とする
     def __init__(self, t, ms, beats, reimu):
-        self.name = ""
         self.t = t
         self.ms = ms
         self.beats = beats
@@ -360,9 +361,9 @@ class AbstractSpellCard:
         return list()
 
 class OneSpellCard(AbstractSpellCard):
+    """離陸「旅の始まり」"""
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
-        self.name = "離陸「旅の始まり」"
         self.bullets = list()
         self.margin = 200
         self.color_l = cl.red; self.color_r = cl.blue
@@ -412,9 +413,9 @@ def hata_xyrgbs(p: np.ndarray, calc_rgb=True) -> Tuple[List[Tuple[int,int]], Opt
                 if calc_rgb: rgbs.append(rgb)
     return xys, rgbs
 class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
+    """相似「葉脈標本」"""
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
-        self.name = "相似「葉脈標本」"
         self.params = [pr.はっぱや,pr.くるくる,pr.たちきの,pr.ひしがた]
         r = self.intp(t)
         self.bullets = [SmallCircleBullet(xy, rgb)for xy, rgb in zip(*hata_xyrgbs(r))]
@@ -436,24 +437,21 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
                 tmp_bullets.append(self.bullets[i])
         return tmp_bullets
 
-    def is_in_rect(self, RECT: pg.Rect) -> bool:
-        return RECT.collidepoint(*self.pos)
-
 class Hata2SpellCard(Hata1SpellCard): #爆発するときに上が安置
+    """相似「破られた手紙」"""
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
-        self.name = "相似「破られた手紙」"
         self.params = [pr.さんかく,pr.おてがみ,pr.せきへん,pr.かこまれ]
 class Hata3SpellCard(Hata1SpellCard): #難しい、小刻みに右斜め下にもぐりこむ
+    """相似「龍の霊廟」"""
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
-        self.name = "相似「龍の霊廟」"
         self.params = [pr.ひびわれ,pr.みつびし,pr.ドラゴン,pr.くろすい]
 
 class ExpansionSpellCard(AbstractSpellCard):
+    """「膨張する時空間異常」"""
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
-        self.name = "「膨張する時空間異常」"
         bulletss = list()
         self.gap = 100
         self.margin = 10
@@ -499,9 +497,9 @@ class Interpolation:
             return (1-p)*self.start_pos+p*self.end_pos
 
 class GalaxySpellCard(AbstractSpellCard):
+    """銀河「ライフゲ-ム」"""
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
-        self.name = "銀河「ライフゲ-ム」"
         self.gap = PLAYAREA_RECT.width/13
         self.radius = self.gap/2
         self.grid = [[PLAYAREA_CENTER + (self.gap*x, self.gap*y) for x in range(-6, 7)]for y in range(-6, 7)]
@@ -531,6 +529,7 @@ class GalaxySpellCard(AbstractSpellCard):
 
         self.set_intp((0,0,1,2), 1,0,0); self.set_intp((0, 0, 1, 2), 0,0,0)
         self.set_intp((0,2,1,2), 1,0,1); self.set_intp((0, 2, 1, 2), 0,0,1)
+
     def set_intp(self, beat, vertical, from_up, up):
         start_beat = count2beat(beat2count(beat)-2)
         scale = [PLAYAREA_RECT.width, PLAYAREA_RECT.height][vertical]
@@ -561,41 +560,40 @@ class GalaxySpellCard(AbstractSpellCard):
             self.planets.append( CircleBullet(pos=PLAYAREA_CENTER+(-scale, scale), radius=radius, border=2, color=cl.red) )
 
         return self.bullets+self.planets
-"""
-一個前
-r (0, 0, 3, 0) # 無理
-l (0, 2, 3, 0) 左↓
-r (0, 0, 0, 1) 右↓
-l (0, 2, 0, 1) 左↑
-r (0, 0, 1, 1) 右↑
-l (0, 2, 1, 1) 左↓
-r (0, 0, 2, 1) 右↑
-l (0, 2, 2, 1) 左↓
 
-r (0, 0, 3, 1) 上→
-l (0, 2, 3, 1) 下←
-r (0, 0, 0, 2) 上←
-l (0, 2, 0, 2) 下→
-r (0, 0, 1, 2) 上→
-l (0, 2, 1, 2) 下←
-
-
-
-
-
- 
-
-
-
-
-
-"""
+class FlipSpellCard(AbstractSpellCard):
+    """逆転「空間識失調」"""
+    def __init__(self, t, ms, beats, reimu):
+        super().__init__(t, ms, beats, reimu)
+        self.mybullet =  lambda pos, color: CircleBullet(pos, radius=10, border=10, color=color)
+        self.earch_radius = 100
+        self.way = 32
+        self.bullets = list()
+    def release(self, t, ms, beats):
+        beat = beats[0]
+        travel = (DEFAULT_POS-PLAYAREA_CENTER)[1]-self.earch_radius
+        if beats.ignite(0,None,None,None) or beats.ignite(2,None,None,None):
+            for i in range(self.way):
+                start_pos = circ(PLAYAREA_CENTER, i*2*np.pi/self.way+np.pi/2, self.earch_radius)
+                end_pos = circ(PLAYAREA_CENTER, i*2*np.pi/self.way+np.pi/2, travel)
+                bullet = self.mybullet(start_pos, cl.red)
+                bullet.intp = Interpolation(beat, count2beat(beat2count(beat)+4), start_pos, end_pos)
+                self.bullets.append(bullet)
+        elif beats.ignite(1,None,None,None) or beats.ignite(3,None,None,None):
+            for i in range(self.way):
+                start_pos = circ(PLAYAREA_CENTER, i*2*np.pi/self.way+np.pi/2+np.pi/self.way, self.earch_radius)
+                end_pos = circ(PLAYAREA_CENTER, i*2*np.pi/self.way+np.pi/2+np.pi/self.way, travel)
+                bullet = self.mybullet(start_pos, cl.blue)
+                bullet.intp = Interpolation(beat, count2beat(beat2count(beat)+4), start_pos, end_pos)
+                self.bullets.append(bullet)
+        for b in self.bullets: b.pos = b.intp(ms)
+        return self.bullets
 
 
 class LastSpellCard(AbstractSpellCard):
+    """着陸「431光年の旅路」"""
     def __init__(self, t, ms, beats, reimu):
         super().__init__(t, ms, beats, reimu)
-        self.name = "着陸「431光年の旅路」"
         self.center1 = PLAYAREA_CENTER
         self.center2 = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top-100])
         self.way = 18 
@@ -648,6 +646,8 @@ class GameStep(AbstractStep):
         self.gameover = False
         self.beats = Beats([None, None])
         self.spell_card = AbstractSpellCard(0, 0, self.beats, self.reimu)
+        self.flip_x = False
+        self.flip_y = False
 
     def play(self, t: int, controller_input: Dict) -> None:
         self.screen_playarea.fill(self.screen_playarea_color)
@@ -657,6 +657,7 @@ class GameStep(AbstractStep):
 
 ################ ?TI タイムスケジュール ################
         if self.beats.ignite(0,0,0,0) and ms != -1: #再生終了で戻るのを防ぐ
+#            self.flip_x = True; self.flip_y = True; 
             self.spell_card = OneSpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,1,0): #間奏0
             self.spell_card.phase += 1
@@ -675,8 +676,10 @@ class GameStep(AbstractStep):
         elif self.beats.ignite(0,0,1,5): #2サビ「現在なら 変えられる」
             self.spell_card = Hata3SpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,1,6): #間奏3(ドロップ) # TODO トリエルの避ける弾幕みたいな
-            self.spell_card = AbstractSpellCard(t, ms, self.beats, self.reimu)
+#            self.flip_x = self.flip_y = True; 
+            self.spell_card = FlipSpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,3,6): #3サビ「なんども あきらめた」(転調)
+#            self.flip_x = self.flip_y = False
             self.spell_card = Hata1SpellCard(t, ms, self.beats, self.reimu)
         elif self.beats.ignite(0,0,1,7): #4サビ「最後は、ふり絞れ」(間を置かず)
             pass
@@ -690,7 +693,7 @@ class GameStep(AbstractStep):
         bullets = self.spell_card.release(t, ms, self.beats)
         is_hit = False
         for bullet in bullets:
-            if check_hit(self.reimu, bullet) and not controller_input.shot:
+            if check_hit(self.reimu, bullet) and not CONFIG["invincible"]:
                 is_hit = True; break
 
         self.reimu.update(t, controller_input, is_hit)
@@ -699,10 +702,9 @@ class GameStep(AbstractStep):
             bullet.draw(self.screen_playarea)
         self.reimu.draw_upper(t, self.screen_playarea)
 
-
         # テキスト描画処理
         self.fontoffset = 0
-        self.print(f"{self.spell_card.name}")
+        self.print(f"{self.spell_card.__doc__}")
         self.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
         self.print(f"fps:{self.clock.get_fps():.2f}")
         self.print(f"bullets: {len(bullets)}")
@@ -713,7 +715,11 @@ class GameStep(AbstractStep):
         for s in beat2squares(self.beats[0]):
             self.print(s)
 
-        self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
+        if self.flip_x or self.flip_y:
+            screen_playarea_flipped = pg.transform.flip(self.screen_playarea, self.flip_x, self.flip_y)
+            self.screen_display.blit(screen_playarea_flipped, (BORDER_RECT.left, BORDER_RECT.top))
+        else:
+            self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
         self.screen_display.blit(self.screen_info, (INFO_RECT.left, INFO_RECT.top))
         pg.draw.rect(self.screen_display, cl.green, BORDER_RECT, 2)
     
@@ -849,9 +855,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--beat', type=str, default="0000")
     parser.add_argument('--bomb_stock', type=int, default=100)
-    args = parser.parse_args()
-    CONFIG["bomb_stock"] = args.bomb_stock
-    CONFIG["beat"] = tuple(map(int, args.beat))
+    parser.add_argument('--invincible', type=bool, default=False)
+    CONFIG = Dict(parser.parse_args().__dict__)
+    CONFIG["bomb_stock"] = CONFIG.bomb_stock
+    CONFIG["beat"] = tuple(map(int, CONFIG.beat))
     CONFIG["ms"] = math.ceil(beat2ms(CONFIG["beat"]))
     print(CONFIG["beat"], CONFIG["ms"], ms2beat(CONFIG["ms"]), ms2beat(math.floor(CONFIG["ms"])), ms2beat(math.ceil(CONFIG["ms"])), ms2beat(round(CONFIG["ms"])))
     assert CONFIG["beat"] == ms2beat(CONFIG["ms"])
