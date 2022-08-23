@@ -13,12 +13,14 @@ class sp: pass #sprite用の名前空間
 class Dict(addict_dict):
     def at(self, k: int) -> Any:
         return self[list(self.keys())[k]]
+ft = Dict()
 
 CONFIG = Dict()
 BPM = 190
 DISPLAY_RECT = pg.Rect(0, 0, 1280, 960)
 BORDER_RECT = pg.Rect(62, 30, 834-62, 930-30)
 PLAYAREA_RECT = pg.Rect(0, 0, 2*386, 2*450)
+DISPLAY_CENTER = np.array([DISPLAY_RECT.left*.5+DISPLAY_RECT.right*.5, DISPLAY_RECT.top*.5+DISPLAY_RECT.bottom*.5])
 PLAYAREA_CENTER = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top*.5+PLAYAREA_RECT.bottom*.5])
 PLAYAREA_MARGIN = 40
 DEFAULT_POS = np.array((PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.bottom+PLAYAREA_MARGIN))
@@ -349,7 +351,7 @@ class SquareBullet(AbstractBullet):
     def __init__(self, pos, radius):
         super().__init__(pos=pos, radius=radius)
     def draw(self, screen):
-        pg.draw.rect(screen, cl.white, (self.pos[0]-self.radius, self.pos[1]-self.radius, self.radius*2, self.radius*2))
+        pg.draw.rect(screen, cl.green, (self.pos[0]-self.radius, self.pos[1]-self.radius, self.radius*2, self.radius*2))
 #        pg.draw.circle(screen, cl.cyan, self.pos, self.radius)
 class ExpansionBullet(CircleBullet):
     def __init__(self, pos, color):
@@ -429,8 +431,8 @@ def hata_xyrgbs(p: np.ndarray, calc_rgb=True) -> Tuple[List[Tuple[int,int]], Opt
     for i, z in enumerate(zs):
         if calc_rgb: rgb = hsv2rgb(i/len(zs), 1, 1)
         xy = z2xy(z)
-        X = 2*np.array([-300+220*i for i in range(3)])
-        Y = 2*np.array(range(-140, 300, 110))
+        X = 2*np.array([-400+220*i for i in range(3)])
+        Y = 2*np.array(([-150+110*i for i in range(4)]))
         for x in X:
             for y in Y:
                 _xy = (xy[0]+x, xy[1]+y)
@@ -442,10 +444,13 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
     """相似「葉脈標本」"""
     def __init__(self, t, ms, beats, game_step):
         super().__init__(t, ms, beats, game_step)
-        self.params = [pr.はっぱや,pr.くるくる,pr.たちきの,pr.ひしがた]
+        self.params = [pr.くるくる,pr.たちきの,pr.ひしがた,pr.はっぱや]
         self.T = round(len(self.params)/(BPM/(60*1000)))
         r = self.intp(0)
         self.bullets = [SmallCircleBullet(xy, rgb)for xy, rgb in zip(*hata_xyrgbs(r))]
+        game_step.reimu.pos = PLAYAREA_CENTER.copy()
+        self.game_step.reimu.controllable = False
+        self.controllable_beat = count2beat(beat2count(beats[0])+2)
     def intp(self, ms):
         ms -= self.t
         p = self.params[(ms//self.T)%len(self.params)]
@@ -453,6 +458,8 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
         r = (1-ms%self.T/self.T)*p+ms%self.T/self.T*q
         return r
     def release(self, t, ms, beats):
+        if beats.ignite(*self.controllable_beat):
+            self.game_step.reimu.controllable = True
         if ms == self.ms: return self.bullets, []
         r = self.intp(ms)
         xys, _ = hata_xyrgbs(r, calc_rgb=False)
@@ -467,7 +474,7 @@ class Hata2SpellCard(Hata1SpellCard): #爆発するときに上が安置
     """相似「破られた手紙」"""
     def __init__(self, t, ms, beats, game_step):
         super().__init__(t, ms, beats, game_step)
-        self.params = [pr.さんかく,pr.おてがみ,pr.せきへん,pr.かこまれ]
+        self.params = [pr.かこまれ, pr.さんかく,pr.おてがみ,pr.せきへん]
 class Hata3SpellCard(Hata1SpellCard): #難しい、小刻みに右斜め下にもぐりこむ
     """相似「龍の霊廟」"""
     def __init__(self, t, ms, beats, game_step):
@@ -604,7 +611,11 @@ class FlipSpellCard(AbstractSpellCard):
         self.way = 32
         self.bullets = list()
         self.blackhole = HOUI2(PLAYAREA_CENTER, self.earch_radius)
+        self.game_step.reimu.controllable = False
+        self.controllable_beat = count2beat(beat2count(beats[0])+2)
     def release(self, t, ms, beats):
+        if beats.ignite(*self.controllable_beat):
+            self.game_step.reimu.controllable = True
         if beats.ignite(0, 0, 1, None,):
             self.game_step.reimu.pos = DEFAULT_POS.copy()
             self.game_step.flip_x = False 
@@ -639,16 +650,43 @@ class FlipSpellCard(AbstractSpellCard):
                 bullet = self.mybullet(start_pos, color)
                 bullet.intp = Interpolation(beat, count2beat(beat2count(beat)+4), start_pos, end_pos)
                 self.bullets.append(bullet)
-        for b in self.bullets: b.pos = b.intp(ms)
+        tmp_bullets = list()
+        for b in self.bullets:
+            b.pos = b.intp(ms)
+            if PLAYAREA_RECT.collidepoint(*b.pos):
+                tmp_bullets.append(b)
+        self.bullets = tmp_bullets
         return self.bullets+[self.blackhole], []
     def finalize(self):
         self.game_step.flip_x = False
         self.game_step.flip_y = False
 
 
-class hogeSpellCard(AbstractSpellCard):
-    """「天泣の涙雨」"""
-    pass
+class AmeSpellCard(AbstractSpellCard):
+    """無月「天泣の涙雨」"""
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
+        self.bullets = list()
+        self.graze = 200 
+        self.yoke = 0.002
+        self.d_kasa = np.array([0, -300])
+    def release(self, t, ms, beats):
+        for _ in range(4):
+            pos = np.array((PLAYAREA_RECT.width*random(), PLAYAREA_RECT.top))
+            direction = circ((0,0), np.pi/2+np.pi/16*(random()-.5),1)
+            speed = 10+10*random()
+            bullet = StraightBullet(pos, direction=direction, speed=speed)
+            bullet.radius = 4
+            bullet.color = cl.blue
+            self.bullets.append(bullet)
+        for bullet in self.bullets:
+            bullet.update()
+            kasa = self.game_step.reimu.pos+self.d_kasa
+            if np.linalg.norm(kasa-bullet.pos) < self.graze:
+                dx = self.yoke*(bullet.pos-kasa)[0]
+                bullet.direction += (dx, 0)
+        return self.bullets, []
+
 
 class LastSpellCard(AbstractSpellCard):
     """着陸「431光年の旅路」"""
@@ -698,11 +736,7 @@ class GameStep(AbstractStep):
         self.screen_playarea_color = cl.gray1
         self.screen_info = pg.Surface((INFO_RECT.width, INFO_RECT.height))
         self.screen_info_color = cl.darkblue
-        self.fontsize = 30
         self.fontoffset = 0
-        self.fontname = "malgungothic"
-        self.fontname = "msgothic"
-        self.font = pg.font.SysFont(self.fontname, self.fontsize)
         self.reimu = Reimu()
 
         self.screen_display.blit(sp.bg, (0,0))
@@ -732,20 +766,18 @@ class GameStep(AbstractStep):
         elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
             pass
         elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
-            self.sc( Hata1SpellCard(t, ms, self.beats, self) )
+            self.sc( Hata2SpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,0,3): #間奏2
             pass
         elif self.beats.ignite(0,0,2,3): #Aメロ2「雲を抜け 見える敵」
-            self.sc( ExpansionSpellCard(t, ms, self.beats, self) )
+            self.sc( Hata3SpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,2,4): #Bメロ2「避けてゆけばいつかは」
-            pass
+            self.sc( ExpansionSpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,1,5): #2サビ「現在なら 変えられる」
             self.sc( FlipSpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,1,6): #間奏3(ドロップ) # TODO トリエルの避ける弾幕みたいな
-#            self.flip_x = self.flip_y = True; 
-            self.sc( Hata3SpellCard(t, ms, self.beats, self) )
+            self.sc( AmeSpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,3,6): #3サビ「なんども あきらめた」(転調)
-#            self.flip_x = self.flip_y = False
             self.sc( Hata1SpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,1,7): #4サビ「最後は、ふり絞れ」(間を置かず)
             pass
@@ -792,8 +824,8 @@ class GameStep(AbstractStep):
     
     def print(self, txt: str) -> None:
         """INFOエリアにテキストを描画"""
-        self.screen_info.blit(self.font.render(txt, True, cl.white), (0, self.fontoffset))
-        self.fontoffset += self.fontsize
+        self.screen_info.blit(ft.w30.font.render(txt, True, cl.white), (0, self.fontoffset))
+        self.fontoffset += ft.w30.fontsize
 
 class TitleStep(AbstractStep):
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
@@ -814,19 +846,49 @@ class TitleStep(AbstractStep):
         self.screen_display.blit(sp.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
         self.screen_description.blit(sp.description, (0,0))
         self.screen_display.blit(sp.description, (BORDER_RECT.left+130, BORDER_RECT.top + self.offset))
-    
+
+DIALOG_SIZE = np.array([500, 200])
+DIALOG_RECT = pg.Rect(
+    *(DISPLAY_CENTER-DIALOG_SIZE/2+(0, 200)), *DIALOG_SIZE
+)
 class ConfigStep(AbstractStep):
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
         super().__init__(screen_display, clock)
-        self.screen_display.fill(cl.black)
+        self.screen_display.blit(sp.witch1, (0,0))
+        self.screen_dialog = pg.Surface((DIALOG_RECT.width, DIALOG_RECT.height))
+        self.txts = [
+            "ボムを捨てて挑むって…\n不可能<インポッシブル>だぜ…\n馬鹿だろお前(呆れ)",
+            "自前のボムだけで挑むなんて…\n狂気<ルナティック>だぜ…\n人間やめるのか？",
+            "そんなボム数で大丈夫か？\n難関<ハード>だぜ…\nできたら尊敬するぜ!",
+            "私のボム持ってけよ、\n普段<ノーマル>の実力\n…見せて欲しいのぜ!",
+            "そんなに持ってったら\n私が破産<イージー>\nしちゃうのぜ(泣)"
+        ]
+        self.fontoffset = 20
     def play(self, t: int, controller_input: Dict) -> None:
-        if controller_input.left:
-            CONFIG["bomb_stock"] -= 1
-            se.ok00.play()
-        elif controller_input.right:
-            CONFIG["bomb_stock"] += 1
-            se.ok00.play()
-        if CONFIG["bomb_stock"] < 0: CONFIG["bomb_stock"] = 0
+        self.screen_dialog.fill(cl.black)
+        mw, mh = sp.marisa.get_size()
+        self.fontoffset = 20
+        self.print(f"{CONFIG.bomb_stock}{'★'*CONFIG.bomb_stock}")
+        self.print("")
+        if CONFIG.bomb_stock == 0:
+            self.print(self.txts[0])
+        elif CONFIG.bomb_stock in range(1, 4):
+            self.print(self.txts[1])
+        elif CONFIG.bomb_stock in range(4, 7):
+            self.print(self.txts[2])
+        elif CONFIG.bomb_stock in range(7, 10):
+            self.print(self.txts[3])
+        else:
+            self.print(self.txts[4])
+#        self.screen_display.blit(sp.witch1, (0,0))
+        self.screen_display.blit(sp.marisa, (DISPLAY_RECT.width-mw, DISPLAY_RECT.height-mh))
+        self.screen_display.blit(self.screen_dialog, (DIALOG_RECT.left, DIALOG_RECT.top))
+        pg.draw.rect(self.screen_display, cl.white, DIALOG_RECT, 4)
+    def print(self, txts: str) -> None:
+        for txt in txts.split("\n"):
+            self.screen_dialog.blit(ft.w30.font.render(txt, True, cl.white), (20, self.fontoffset))
+            self.fontoffset += ft.w30.fontsize
+
 
 ################ ?MA メインループ ################
 class MainLoop:
@@ -854,6 +916,11 @@ class MainLoop:
         sp.eff_charge.blit(pg.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
         sp.etama7a = pg.image.load("data/etama7a.png")
         sp.houi2 = pg.image.load("data/houi2.png")
+        sp.witch1 = pg.image.load("data/witch1.png")
+        sp.marisa = pg.image.load("data/marisa.png")
+        ft.w30.fontsize = 30
+        ft.w30.name = "msgothic"
+        ft.w30.font = pg.font.SysFont(ft.w30.name, ft.w30.fontsize)
         pg.mixer.music.load("data/Yours.wav")
         pg.mixer.music.play(loops=-1)
 
@@ -918,6 +985,14 @@ class MainLoop:
                         self.back_to_title()
                     if event.key == pg.K_z and self.current_step == TitleStep:
                         self.go_to_config()
+                    if self.current_step == ConfigStep:
+                        if event.key == pg.K_LEFT:
+                            CONFIG["bomb_stock"] -= 1
+                            if CONFIG["bomb_stock"] < 0: CONFIG["bomb_stock"] = 0
+                            se.ok00.play()
+                        if event.key == pg.K_RIGHT:
+                            CONFIG["bomb_stock"] += 1
+                            se.ok00.play()
             self.t += 1
 
 if __name__ == "__main__":
