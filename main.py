@@ -23,6 +23,7 @@ PLAYAREA_CENTER = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAR
 PLAYAREA_MARGIN = 40
 DEFAULT_POS = np.array((PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.bottom+PLAYAREA_MARGIN))
 INFO_RECT = pg.Rect(834+30, 30, 1280-834-2*30, 500)
+mpf = round(1000/60) # 16.6666 ~ 17 t->msへの変換に使う
 
 cl = Dict(pg.colordict.THECOLORS) # https://www.pygame.org/docs/ref/color_list.html
 pr = Dict(
@@ -130,6 +131,7 @@ def beat2ms(beat: beat_t) -> int:
     ms = count/(BPM/(60*1000))
     return ms
 def beat2squares(beat: beat_t) -> List[str]:
+    if 8 < beat[3]: return ["■"*4 for _ in range(5)]
     squares = [["□"]*4 for _ in range(5)]
     for i in range(4):
         squares[i][beat[i]%4] = "■"
@@ -188,23 +190,23 @@ class Reimu:
         self.option.blit(sp.pl00, (0, 0), (3*32*2, 3*48*2, 16*2, 16*2))
         self.bomb_stock = CONFIG["bomb_stock"]
         self.bomb_invincible = False
-        self.bomb_invincible_time = 2*60 # ボム無敵時間
+        self.bomb_invincible_time = 2*1000 # ボム無敵時間
         self.bomb_lasttime = float("inf")
         self.hit_invincible = False
-        self.hit_invincible_time = 1*60 # 被弾無敵時間
+        self.hit_invincible_time = 1*1000 # 被弾無敵時間
         self.spellcard_invincible = False
-        self.spellcard_invincible_time = 0.5*60 # スペルカード移行時無敵
+        self.spellcard_invincible_time = 0.5*1000 # スペルカード移行時無敵
         self.hit_lasttime = float("inf")
         self.radius = 5 # 通常は3.0, 2.4の2倍
-        self.kurai_bomb = 30 # 通常は8、15でもよさそう
+        self.kurai_bomb = 30*mpf # 通常は8、15でもよさそう ここはフレーム指定
         self.status = Dict({k:Status() for k in Status.KEY})
 
-    def update(self, t: int, controller_input: Dict, is_hit: bool) -> None:
+    def update(self, t: int, ms: int, controller_input: Dict, is_hit: bool) -> None:
         """自機の位置、無敵等をupdate"""
         # controller inputとreimu.statusが変化したら更新し、更新時刻を記録する
         for k in Status.KEY:
             if self.status[k].now^controller_input[k]:
-                self.status[k].last[controller_input[k]] = t
+                self.status[k].last[controller_input[k]] = ms
                 self.status[k].now = controller_input[k]
 
         speed = 2*[4.0, 2.0][controller_input.slow]
@@ -227,23 +229,23 @@ class Reimu:
             and not self.bomb_invincible and not self.hit_invincible ):
             self.bomb_invincible = True
             self.bomb_stock -= 1
-            self.bomb_lasttime = t
+            self.bomb_lasttime = ms
             se.slash.play()
 
         # 通常の被弾の処理
         elif is_hit and not self.bomb_invincible and not self.hit_invincible and not self.spellcard_invincible:
             self.hit_invincible = True
             self.bomb_stock -= 2
-            self.hit_lasttime = t
+            self.hit_lasttime = ms
             se.pldead00.play()
 
         # 喰らいボムの処理
         elif ( self.status["bomb"].now and 0 < self.bomb_stock and self.hit_invincible ): 
-            if t-self.hit_lasttime <= self.kurai_bomb:
+            if ms-self.hit_lasttime <= self.kurai_bomb:
                 self.hit_invincible = False
                 self.bomb_invincible = True
                 self.bomb_stock += 1
-                self.bomb_lasttime = t
+                self.bomb_lasttime = ms
                 se.slash.play()
 
         # ボム不可時の処理
@@ -252,22 +254,22 @@ class Reimu:
             se.invalid.play()
 
         # 無敵時間終了処理
-        if 0 < t-self.bomb_lasttime-self.bomb_invincible_time:
+        if 0 < ms-self.bomb_lasttime-self.bomb_invincible_time:
             self.bomb_invincible = False
-        if 0 < t-self.hit_lasttime-self.hit_invincible_time:
+        if 0 < ms-self.hit_lasttime-self.hit_invincible_time:
             self.hit_invincible = False
-        if 0 < t-self.hit_lasttime-self.hit_invincible_time:
+        if 0 < ms-self.hit_lasttime-self.hit_invincible_time:
             self.hit_invincible = False
-        if 0 < t-self.spellcard_lasttime-self.spellcard_invincible_time:
+        if 0 < ms-self.spellcard_lasttime-self.spellcard_invincible_time:
             self.spellcard_invincible = False
     
-    def guard_spellcard(self, t: int) -> None:
+    def guard_spellcard(self, t: int, ms: int) -> None:
         self.spellcard_invincible = True
-        self.spellcard_lasttime = t
+        self.spellcard_lasttime = ms
 
-    def draw_upper(self, t: int, screen: pg.Surface) -> None:
+    def draw_upper(self, t: int, ms: int, screen: pg.Surface) -> None:
         """Surfaceへの自機の描画 (弾より上のレイヤー)"""
-        angle_sloweffect = t*3%360
+        angle_sloweffect = (ms*18/100)%360
         d2 = 2*calc_d(angle_sloweffect)
         rot_sloweffect = pg.transform.rotate(sp.sloweffect, angle_sloweffect)
         rot_sloweffect2 = pg.transform.rotate(sp.sloweffect, -angle_sloweffect)
@@ -275,7 +277,7 @@ class Reimu:
             screen.blit(rot_sloweffect, self.pos-(32*d2, 32*d2), (0, 0, *rot_sloweffect.get_size()))
             screen.blit(rot_sloweffect2, self.pos-(32*d2, 32*d2), (0, 0, *rot_sloweffect.get_size()))
 
-    def draw_lower(self, t: int, screen: pg.Surface) -> None:
+    def draw_lower(self, t: int, ms: int, screen: pg.Surface) -> None:
         """Surfaceへの自機の描画 (弾より下のレイヤー)"""
         if self.status.left.now: reimu_offset = 1
         elif self.status.right.now: reimu_offset = 2
@@ -283,27 +285,27 @@ class Reimu:
 
         screen.blit(
             sp.pl10 if any([self.bomb_invincible, self.hit_invincible, self.spellcard_invincible]) else sp.pl00,
-            self.pos-(16*2, 24*2), (0+32*(t//8%4)*2, reimu_offset*48*2, 32*2, 48*2))
+            self.pos-(16*2, 24*2), (0+32*((ms//mpf)//8%4)*2, reimu_offset*48*2, 32*2, 48*2))
         if self.bomb_invincible:
-            bomb_radius = self.bomb_invincible_time*(1-(t-self.bomb_lasttime)/self.bomb_invincible_time)
+            bomb_radius = self.bomb_invincible_time*(1-(ms-self.bomb_lasttime)/self.bomb_invincible_time)/mpf
             pg.draw.circle(screen, cl.cyan, self.pos, bomb_radius, 2)
         elif self.hit_invincible:
-            hit_radius = self.hit_invincible_time*(1-(t-self.hit_lasttime)/self.hit_invincible_time)
+            hit_radius = self.hit_invincible_time*(1-(ms-self.hit_lasttime)/self.hit_invincible_time)/mpf
             pg.draw.circle(screen, cl.cyan, self.pos, hit_radius, 2)
 
-        angle_option = -t*6%360
+        angle_option = -(ms*36/100)%360
         d = 2*calc_d(angle_option)
         rot_option = pg.transform.rotate(self.option, angle_option)
 
         option_pos_lower = np.array([[+16, 32], [-16, 32], [+38, 16], [-38, 16]])*2
         option_pos_upper = np.array([[+8, -30], [-8, -30], [+24, -20], [-24, -20]])*2
-        option_move = 4
-        dt = (t-self.status.slow.last[self.status.slow.now])/option_move
-        if 0 <= dt < 1:
+        option_move = 4*mpf #4フレ分の時間
+        dms = (ms-self.status.slow.last[self.status.slow.now])/option_move
+        if 0 <= dms < 1:
             if self.status.slow.now:
-                option_pos = dt*option_pos_upper+(1-dt)*option_pos_lower
+                option_pos = dms*option_pos_upper+(1-dms)*option_pos_lower
             else:
-                option_pos = dt*option_pos_lower+(1-dt)*option_pos_upper
+                option_pos = dms*option_pos_lower+(1-dms)*option_pos_upper
         else:
             if self.status.slow.now:
                 option_pos = option_pos_upper
@@ -350,20 +352,19 @@ class SquareBullet(AbstractBullet):
 ################ ?SP スペルカード ################
 class AbstractSpellCard:
     ""# docstringをスペカ名とする
-    def __init__(self, t, ms, beats, reimu):
+    def __init__(self, t, ms, beats, game_step):
         self.t = t
         self.ms = ms
         self.beats = beats
-        self.reimu = reimu
+        self.game_step = game_step
         self.phase = 0
-        self.reimu.guard_spellcard(t)
-    def release(self, t, ms, beats):
-        return list()
+        self.game_step.reimu.guard_spellcard(t, ms)
+    def release(self, t, ms, beats): return list()
 
 class OneSpellCard(AbstractSpellCard):
     """離陸「旅の始まり」"""
-    def __init__(self, t, ms, beats, reimu):
-        super().__init__(t, ms, beats, reimu)
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
         self.bullets = list()
         self.margin = 200
         self.color_l = cl.red; self.color_r = cl.blue
@@ -414,8 +415,8 @@ def hata_xyrgbs(p: np.ndarray, calc_rgb=True) -> Tuple[List[Tuple[int,int]], Opt
     return xys, rgbs
 class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
     """相似「葉脈標本」"""
-    def __init__(self, t, ms, beats, reimu):
-        super().__init__(t, ms, beats, reimu)
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
         self.params = [pr.はっぱや,pr.くるくる,pr.たちきの,pr.ひしがた]
         r = self.intp(t)
         self.bullets = [SmallCircleBullet(xy, rgb)for xy, rgb in zip(*hata_xyrgbs(r))]
@@ -439,19 +440,19 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
 
 class Hata2SpellCard(Hata1SpellCard): #爆発するときに上が安置
     """相似「破られた手紙」"""
-    def __init__(self, t, ms, beats, reimu):
-        super().__init__(t, ms, beats, reimu)
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
         self.params = [pr.さんかく,pr.おてがみ,pr.せきへん,pr.かこまれ]
 class Hata3SpellCard(Hata1SpellCard): #難しい、小刻みに右斜め下にもぐりこむ
     """相似「龍の霊廟」"""
-    def __init__(self, t, ms, beats, reimu):
-        super().__init__(t, ms, beats, reimu)
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
         self.params = [pr.ひびわれ,pr.みつびし,pr.ドラゴン,pr.くろすい]
 
 class ExpansionSpellCard(AbstractSpellCard):
     """「膨張する時空間異常」"""
-    def __init__(self, t, ms, beats, reimu):
-        super().__init__(t, ms, beats, reimu)
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
         bulletss = list()
         self.gap = 100
         self.margin = 10
@@ -476,7 +477,7 @@ class ExpansionSpellCard(AbstractSpellCard):
     def release(self, t, ms, beats):
         t -= self.t
         for bullet in self.bullets:
-            if square_dist(self.reimu, bullet) < (self.reimu.radius+bullet.radius+self.graze)**2:
+            if square_dist(self.game_step.reimu, bullet) < (self.game_step.reimu.radius+bullet.radius+self.graze)**2:
                 bullet.radius += self.exspeed
         return self.bullets
     
@@ -498,12 +499,12 @@ class Interpolation:
 
 class GalaxySpellCard(AbstractSpellCard):
     """銀河「ライフゲ-ム」"""
-    def __init__(self, t, ms, beats, reimu):
-        super().__init__(t, ms, beats, reimu)
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
         self.gap = PLAYAREA_RECT.width/13
         self.radius = self.gap/2
         self.grid = [[PLAYAREA_CENTER + (self.gap*x, self.gap*y) for x in range(-6, 7)]for y in range(-6, 7)]
-        self.reimu.pos = PLAYAREA_CENTER.copy()
+        self.game_step.reimu.pos = PLAYAREA_CENTER.copy()
         self.gb = [list() for _ in range(8)]
         for i in range(8):
             for x in range(13):
@@ -563,8 +564,8 @@ class GalaxySpellCard(AbstractSpellCard):
 
 class FlipSpellCard(AbstractSpellCard):
     """逆転「空間識失調」"""
-    def __init__(self, t, ms, beats, reimu):
-        super().__init__(t, ms, beats, reimu)
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
         self.mybullet =  lambda pos, color: CircleBullet(pos, radius=10, border=10, color=color)
         self.earch_radius = 100
         self.way = 32
@@ -590,10 +591,14 @@ class FlipSpellCard(AbstractSpellCard):
         return self.bullets
 
 
+class hogeSpellCard(AbstractSpellCard):
+    """「天泣の涙雨」"""
+    pass
+
 class LastSpellCard(AbstractSpellCard):
     """着陸「431光年の旅路」"""
-    def __init__(self, t, ms, beats, reimu):
-        super().__init__(t, ms, beats, reimu)
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
         self.center1 = PLAYAREA_CENTER
         self.center2 = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top-100])
         self.way = 18 
@@ -645,7 +650,7 @@ class GameStep(AbstractStep):
         self.screen_display.blit(sp.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
         self.gameover = False
         self.beats = Beats([None, None])
-        self.spell_card = AbstractSpellCard(0, 0, self.beats, self.reimu)
+        self.spell_card = AbstractSpellCard(0, 0, self.beats, self)
         self.flip_x = False
         self.flip_y = False
 
@@ -658,36 +663,36 @@ class GameStep(AbstractStep):
 ################ ?TI タイムスケジュール ################
         if self.beats.ignite(0,0,0,0) and ms != -1: #再生終了で戻るのを防ぐ
 #            self.flip_x = True; self.flip_y = True; 
-            self.spell_card = OneSpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = OneSpellCard(t, ms, self.beats, self)
         elif self.beats.ignite(0,0,1,0): #間奏0
             self.spell_card.phase += 1
         elif self.beats.ignite(0,0,3,0): #Aメロ1「闇の中 光る星」
-            self.spell_card = GalaxySpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = GalaxySpellCard(t, ms, self.beats, self)
         elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
             self.spell_card.phase += 1
         elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
-            self.spell_card = Hata2SpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = Hata2SpellCard(t, ms, self.beats, self)
         elif self.beats.ignite(0,0,0,3): #間奏2
             pass
         elif self.beats.ignite(0,0,2,3): #Aメロ2「雲を抜け 見える敵」
-            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = ExpansionSpellCard(t, ms, self.beats, self)
         elif self.beats.ignite(0,0,2,4): #Bメロ2「避けてゆけばいつかは」
             pass
         elif self.beats.ignite(0,0,1,5): #2サビ「現在なら 変えられる」
-            self.spell_card = Hata3SpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = Hata3SpellCard(t, ms, self.beats, self)
         elif self.beats.ignite(0,0,1,6): #間奏3(ドロップ) # TODO トリエルの避ける弾幕みたいな
 #            self.flip_x = self.flip_y = True; 
-            self.spell_card = FlipSpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = FlipSpellCard(t, ms, self.beats, self)
         elif self.beats.ignite(0,0,3,6): #3サビ「なんども あきらめた」(転調)
 #            self.flip_x = self.flip_y = False
-            self.spell_card = Hata1SpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = Hata1SpellCard(t, ms, self.beats, self)
         elif self.beats.ignite(0,0,1,7): #4サビ「最後は、ふり絞れ」(間を置かず)
             pass
         elif self.beats.ignite(0,0,3,7): #間奏4(落ち着く)
-            self.spell_card = LastSpellCard(t, ms, self.beats, self.reimu)
+            self.spell_card = LastSpellCard(t, ms, self.beats, self)
         elif self.beats.ignite(0,0,1,8): #5サビ(ラスト)「まだ見ぬ 未来なら」
             pass
-        elif self.beats.ignite(0,0,3,8): #終了
+        elif self.beats.ignite(0,2,3,8): #終了
             pass
 
         bullets = self.spell_card.release(t, ms, self.beats)
@@ -696,11 +701,11 @@ class GameStep(AbstractStep):
             if check_hit(self.reimu, bullet) and not CONFIG["invincible"]:
                 is_hit = True; break
 
-        self.reimu.update(t, controller_input, is_hit)
-        self.reimu.draw_lower(t, self.screen_playarea)
+        self.reimu.update(t, ms, controller_input, is_hit)
+        self.reimu.draw_lower(t, ms, self.screen_playarea)
         for bullet in bullets:
             bullet.draw(self.screen_playarea)
-        self.reimu.draw_upper(t, self.screen_playarea)
+        self.reimu.draw_upper(t, ms, self.screen_playarea)
 
         # テキスト描画処理
         self.fontoffset = 0
@@ -793,7 +798,7 @@ class MainLoop:
         pg.mixer.music.load("data/ENISHI.ogg")
         pg.mixer.music.stop()
         pg.mixer.music.rewind()
-        pg.mixer.music.play(1, CONFIG["ms"]/1000)
+        pg.mixer.music.play(-1, CONFIG["ms"]/1000)
         self.game_step = GameStep(self.screen_display, self.clock)
         self.t = 0
         se.ok00.play()
