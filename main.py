@@ -413,23 +413,24 @@ def hata_xyrgbs(p: np.ndarray, calc_rgb=True) -> Tuple[List[Tuple[int,int]], Opt
                 xys.append(_xy)
                 if calc_rgb: rgbs.append(rgb)
     return xys, rgbs
+
 class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
     """相似「葉脈標本」"""
     def __init__(self, t, ms, beats, game_step):
         super().__init__(t, ms, beats, game_step)
         self.params = [pr.はっぱや,pr.くるくる,pr.たちきの,pr.ひしがた]
-        r = self.intp(t)
+        self.T = round(len(self.params)/(BPM/(60*1000)))
+        r = self.intp(0)
         self.bullets = [SmallCircleBullet(xy, rgb)for xy, rgb in zip(*hata_xyrgbs(r))]
-    def intp(self, t):
-        t -= self.t
-        T = 75 # 4beat/(190bpm/60sec)*60frame
-        p = self.params[(t//T)%len(self.params)]
-        q = self.params[(t//T+1)%len(self.params)]
-        r = (1-t%T/T)*p+t%T/T*q
+    def intp(self, ms):
+        ms -= self.t
+        p = self.params[(ms//self.T)%len(self.params)]
+        q = self.params[(ms//self.T+1)%len(self.params)]
+        r = (1-ms%self.T/self.T)*p+ms%self.T/self.T*q
         return r
     def release(self, t, ms, beats):
-        if t == self.t: return self.bullets
-        r = self.intp(t)
+        if ms == self.ms: return self.bullets
+        r = self.intp(ms)
         xys, _ = hata_xyrgbs(r, calc_rgb=False)
         tmp_bullets = list()
         for i, xy in enumerate(xys):
