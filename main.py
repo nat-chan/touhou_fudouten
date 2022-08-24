@@ -26,6 +26,7 @@ PLAYAREA_MARGIN = 40
 DEFAULT_POS = np.array((PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.bottom+PLAYAREA_MARGIN))
 INFO_RECT = pg.Rect(834+30, 30, 1280-834-2*30, 500)
 mpf = round(1000/60) # 16.6666 ~ 17 t->msへの変換に使う
+beat_t = Tuple[int, int, int, int]
 
 cl = Dict(pg.colordict.THECOLORS) # https://www.pygame.org/docs/ref/color_list.html
 pr = Dict(
@@ -118,7 +119,6 @@ def calc_d(angle: float) -> float:
     return math.cos(angle%90/360*2*np.pi)+math.sin(angle%90/360*2*np.pi)
 
 # beat(拍数)関連の補助関数
-beat_t = Tuple[int, int, int, int]
 def beat2count(beat: beat_t) -> int:
     return beat[0]+4*beat[1]+16*beat[2]+64*beat[3]
 def count2beat(count: int) -> beat_t:
@@ -371,7 +371,12 @@ class ETAMA7A(AbstractBullet):
 class HOUI2(AbstractBullet):
     def draw(self, screen):
         sprite = sp.houi2
-        size = sp.houi2.get_size()
+        size = sprite.get_size()
+        screen.blit(sprite, self.pos-(size[0]/2, size[1]/2), (0, 0, *size))
+class YUKARI_S(AbstractBullet):
+    def draw(self, screen):
+        sprite = sp.yukari_s
+        size = sprite.get_size()
         screen.blit(sprite, self.pos-(size[0]/2, size[1]/2), (0, 0, *size))
 
 ################ ?SP スペルカード ################
@@ -685,6 +690,8 @@ class AmeSpellCard(AbstractSpellCard):
             if np.linalg.norm(kasa-bullet.pos) < self.graze:
                 dx = self.yoke*(bullet.pos-kasa)[0]
                 bullet.direction += (dx, 0)
+            if square_dist(self.game_step.reimu, bullet) < 100:
+                bullet.pos = (0,0)
         return self.bullets, []
 
 
@@ -699,15 +706,20 @@ class LastSpellCard(AbstractSpellCard):
         self.cspeed = 0.0005
         self.const = 1
         self.gap = 70
-        self.gain = self.cspeed/100
+        self.gain = 2*self.cspeed/1000
+        self.gain2 = self.gap/1000
         self.game_step.reimu.pos = DEFAULT_POS.copy()
-        self.e = ETAMA7A(self.center2, -self.game_step.reimu.radius) # 当たり判定無し
+        self.e = ETAMA7A(self.center2, -self.game_step.reimu.radius)
+        self.y = YUKARI_S(self.center2, -self.game_step.reimu.radius)
     def release(self, t, ms, beats):
         t -= self.t
         T = 60*10
-        if T < t:
+        if T < t <= 1.5*T:
             self.center = self.center1
             self.cspeed += self.gain
+            self.gap -= self.gain2
+        elif 1.5*T < t:
+            self.center = self.center1
         else:
             self.center = t/T*self.center1 + (1-t/T)*self.center2
         self.lwind = list()
@@ -721,7 +733,9 @@ class LastSpellCard(AbstractSpellCard):
                     MiddleCircleBullet(circ(self.center, -(j+self.const)*self.cspeed*t-i*2*np.pi/self.way, self.earth_radius+self.gap*j+self.gap*.5), cl.blue)
                 )
         self.e.pos = self.center
-        return self.lwind+self.rwind, [self.e]
+        MS = beat2ms((0, 2, 0, 0))
+        self.y.pos = self.center + (0, 6*np.sin(2*np.pi*(ms/MS))-40)
+        return self.lwind+self.rwind, [self.e, self.y]
 
 ################ ?ST プレイ中の各ステップ ################
 class AbstractStep:
@@ -860,7 +874,7 @@ class ConfigStep(AbstractStep):
             "ボムを捨てて挑むって…\n不可能<インポッシブル>だぜ…\n馬鹿だろお前(呆れ)",
             "自前のボムだけで挑むなんて…\n狂気<ルナティック>だぜ…\n人間やめるのか？",
             "そんなボム数で大丈夫か？\n難関<ハード>だぜ…\nできたら尊敬するぜ!",
-            "私のボム持ってけよ、\n普段<ノーマル>の実力\n…見せて欲しいのぜ!",
+            "私のボム持ってけよ、\n普段<ノーマル>の実力\n見せて欲しいのぜ!",
             "そんなに持ってったら\n私が破産<イージー>\nしちゃうのぜ(泣)"
         ]
         self.fontoffset = 20
@@ -918,6 +932,8 @@ class MainLoop:
         sp.houi2 = pg.image.load("data/houi2.png")
         sp.witch1 = pg.image.load("data/witch1.png")
         sp.marisa = pg.image.load("data/marisa.png")
+        sp.yukari_s = pg.image.load("data/yukari_bs.png")
+        sp.yukari_b = pg.image.load("data/yukari_b.png")
         ft.w30.fontsize = 30
         ft.w30.name = "msgothic"
         ft.w30.font = pg.font.SysFont(ft.w30.name, ft.w30.fontsize)
