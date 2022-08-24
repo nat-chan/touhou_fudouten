@@ -378,6 +378,13 @@ class YUKARI_S(AbstractBullet):
         sprite = sp.yukari_s
         size = sprite.get_size()
         screen.blit(sprite, self.pos-(size[0]/2, size[1]/2), (0, 0, *size))
+class Target(AbstractBullet):
+    def __init__(self, pos, sprite):
+        super().__init__(pos, 0)
+        self.sprite = sprite
+    def draw(self, screen):
+        size = self.sprite.get_size()
+        screen.blit(self.sprite, self.pos-(size[0]/2, size[1]/2), (0, 0, *size))
 
 ################ ?SP スペルカード ################
 class AbstractSpellCard:
@@ -760,6 +767,9 @@ class GameStep(AbstractStep):
         self.spell_card = AbstractSpellCard(0, 0, self.beats, self)
         self.flip_x = False
         self.flip_y = False
+        self.laspetxt = Target(PLAYAREA_CENTER, sp.laspetxt)
+        self.clear = False
+
     def sc(self, spell_card):
         self.spell_card.finalize()
         self.spell_card = spell_card
@@ -796,11 +806,13 @@ class GameStep(AbstractStep):
         elif self.beats.ignite(0,0,1,7): #4サビ「最後は、ふり絞れ」(間を置かず)
             pass
         elif self.beats.ignite(0,0,3,7): #間奏4(落ち着く)
+            self.reimu.bomb_stock = 0
             self.sc( LastSpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,1,8): #5サビ(ラスト)「まだ見ぬ 未来なら」
             pass
         elif self.beats.ignite(0,2,3,8): #終了
-            pass
+            self.reimu.controllable = False
+            self.clear = True
 
         bullets, targets = self.spell_card.release(t, ms, self.beats)
         for target in targets:
@@ -815,16 +827,18 @@ class GameStep(AbstractStep):
             bullet.draw(self.screen_playarea)
         self.reimu.draw_upper(t, ms, self.screen_playarea)
 
+        if beat2ms((0,0,3,7)) < ms <= beat2ms((0,2,3,7)):
+            self.laspetxt.draw(self.screen_playarea)
+
         # テキスト描画処理
         self.fontoffset = 0
         self.print(f"{self.spell_card.__doc__}")
         self.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
         self.print(f"fps:{self.clock.get_fps():.2f}")
-#        self.print(f"弾数: {len(bullets)}")
-#        self.print(f"■□♡♥☆★こんにちわ世界")
-#        self.print(f"{ms}")
-#        self.print(f"{self.beats[0]}")
-#        self.print(f"{self.fontname}")
+        self.print(f"弾数: {len(bullets)}")
+        self.print(f"■□♡♥☆★こんにちわ世界")
+        self.print(f"{ms}")
+        self.print(f"{self.beats[0]}")
         for s in beat2squares(self.beats[0]):
             self.print(s)
 
@@ -934,6 +948,7 @@ class MainLoop:
         sp.marisa = pg.image.load("data/marisa.png")
         sp.yukari_s = pg.image.load("data/yukari_bs.png")
         sp.yukari_b = pg.image.load("data/yukari_b.png")
+        sp.laspetxt = pg.image.load("data/laspetxt.png")
         ft.w30.fontsize = 30
         ft.w30.name = "msgothic"
         ft.w30.font = pg.font.SysFont(ft.w30.name, ft.w30.fontsize)
