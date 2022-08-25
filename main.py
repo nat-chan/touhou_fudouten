@@ -7,13 +7,53 @@ import sys
 import math
 import argparse
 from random import random
+from collections import defaultdict
+from functools import lru_cache
 
-class se: pass #se用の名前空間
-class sp: pass #sprite用の名前空間
+class se: #se用の名前空間
+    @classmethod
+    def load(se):
+        se.cancel00 = pg.mixer.Sound("data/se_cancel00.wav")
+        se.ok00 = pg.mixer.Sound("data/se_ok00.wav")
+        se.slash = pg.mixer.Sound("data/se_slash.wav")
+        se.pldead00 = pg.mixer.Sound("data/se_pldead00.wav")
+        se.invalid = pg.mixer.Sound("data/se_invalid.wav")
+        se.extend = pg.mixer.Sound("data/se_extend.wav")
+
+class sp: #sprite用の名前空間
+    @classmethod
+    def load(sp):
+        sp.bg = pg.image.load("data/bg.png")
+        sp.logo = pg.image.load("data/logo.png")
+        sp.description = pg.image.load("data/description4.png")
+        sp.pl00 = pg.image.load("data/w2x_pl00.png")
+        sp.pl10 = pg.image.load("data/w2x_pl10.png")
+        sp.sloweffect = pg.Surface((128, 128), pg.SRCALPHA)
+        sp.sloweffect.blit(pg.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
+        sp.eff_charge = pg.Surface((64, 64), pg.SRCALPHA)
+        sp.eff_charge.blit(pg.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
+        sp.etama7a = pg.image.load("data/etama7a.png")
+        sp.houi2 = pg.image.load("data/houi2.png")
+        sp.witch1 = pg.image.load("data/witch1.png")
+        sp.marisa = pg.image.load("data/marisa.png")
+        sp.yukari_bs = pg.image.load("data/yukari_bs.png")
+        sp.yukari_b = pg.image.load("data/yukari_b.png")
+        sp.laspetxt = pg.image.load("data/laspetxt.png")
+        sp.title_bg = pg.image.load("data/title_bg.png")
+        sp.reimu_t = pg.image.load("data/reimu_t.png")
+        sp.marisa_t = pg.image.load("data/marisa_t.png")
+        sp.yukari_t = pg.image.load("data/yukari_t.png")
+        sp.reimu_s = pg.image.load("data/reimu_s.png")
+        sp.marisa_s = pg.image.load("data/marisa_s.png")
+        sp.yukari_s = pg.image.load("data/yukari_r.png")
+
+@lru_cache(maxsize=None)
+def font(size, name="msgothic"):
+    return pg.font.SysFont(name, size)
+
 class Dict(addict_dict):
     def at(self, k: int) -> Any:
         return self[list(self.keys())[k]]
-ft = Dict()
 
 CONFIG = Dict()
 BPM = 190
@@ -83,6 +123,14 @@ GALAXY = [lifegame_str2mat([
 for i in range(7): GALAXY.append(lifegame_step(GALAXY[i]))
 
 ################ ?HE 補助関数群 ################
+def display_l(screen, sprite):
+    w, h = sprite.get_size()
+    screen.blit(sprite, (0, DISPLAY_RECT.height-h))
+def display_r(screen, sprite):
+    w, h = sprite.get_size()
+    screen.blit(sprite, (DISPLAY_RECT.width-w, DISPLAY_RECT.height-h))
+
+
 def hatafast(p: np.ndarray, rep=2) -> np.ndarray:
     """畑写像を高速に計算"""
     z = np.array([[1, 1, 1]], dtype=np.float64)
@@ -375,7 +423,7 @@ class HOUI2(AbstractBullet):
         screen.blit(sprite, self.pos-(size[0]/2, size[1]/2), (0, 0, *size))
 class YUKARI_S(AbstractBullet):
     def draw(self, screen):
-        sprite = sp.yukari_s
+        sprite = sp.yukari_bs
         size = sprite.get_size()
         screen.blit(sprite, self.pos-(size[0]/2, size[1]/2), (0, 0, *size))
 class Target(AbstractBullet):
@@ -497,14 +545,21 @@ class ExpansionSpellCard(AbstractSpellCard):
     """「膨張する時空間異常」"""
     def __init__(self, t, ms, beats, game_step):
         super().__init__(t, ms, beats, game_step)
-        bulletss = list()
+        self.exspeed = 0.2
+        self.graze = 100
+        self.pradius = PLAYAREA_RECT.height/4
+        self.ppos = PLAYAREA_CENTER - (0, PLAYAREA_RECT.height/8)
+        self.planet = CircleBullet(pos=self.ppos, radius=self.pradius, border=0, color=cl.white)
+        self.game_step.reimu.pos = self.ppos.copy()
         self.gap = 100
-        self.margin = 10
-        y = PLAYAREA_RECT.top + self.margin
-        while y < PLAYAREA_RECT.bottom - self.margin:
-            x = PLAYAREA_RECT.left + self.margin
+        self.xmargin = 30
+        self.ymargin = 0
+        bulletss = list()
+        y = PLAYAREA_RECT.top + self.ymargin
+        while y < PLAYAREA_RECT.bottom - self.ymargin:
+            x = PLAYAREA_RECT.left + self.xmargin
             tmp_bullets1 = list()
-            while x < PLAYAREA_RECT.right - self.margin:
+            while x < PLAYAREA_RECT.right - self.xmargin:
                 tmp_bullets1.append(ExpansionBullet((x, y), cl.red))
                 x += self.gap
             tmp_bullets2 = list()
@@ -516,8 +571,7 @@ class ExpansionSpellCard(AbstractSpellCard):
             bulletss.append(tmp_bullets2)
             y += self.gap*math.sqrt(3)
         self.bullets = sum(bulletss, [])
-        self.exspeed = [0.1, 0.1][self.phase]
-        self.graze = 100
+
     def release(self, t, ms, beats):
         t -= self.t
         for bullet in self.bullets:
@@ -528,7 +582,55 @@ class ExpansionSpellCard(AbstractSpellCard):
                 bullet.centercolor = cl.white
                 
         return self.bullets, []
-    
+
+class OutOfSightSpellCard(AbstractSpellCard):
+    """衝突「アウトオブサイト」"""
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
+        self.game_step.reimu.pos = DEFAULT_POS.copy()
+        self.exspeed = 0.2
+        self.graze = 100
+        self.pradius = PLAYAREA_RECT.height/4
+        self.ppos = PLAYAREA_CENTER - (0, PLAYAREA_RECT.height/8)
+        self.planet = CircleBullet(pos=self.ppos, radius=self.pradius, border=0, color=cl.white)
+        self.gap = 100
+        self.xmargin = 30
+        self.ymargin = 0
+        bulletss = list()
+        y = PLAYAREA_RECT.top + self.ymargin
+        while y < PLAYAREA_RECT.bottom - self.ymargin:
+            x = PLAYAREA_RECT.left + self.xmargin
+            tmp_bullets1 = list()
+            while x < PLAYAREA_RECT.right - self.xmargin:
+                tmp_bullets1.append(ExpansionBullet((x, y), cl.red))
+                x += self.gap
+            tmp_bullets2 = list()
+            for bullet in tmp_bullets1[:-1]:
+                _x = bullet.pos[0]+self.gap/2
+                _y = bullet.pos[1]+self.gap*math.sqrt(3)/2
+                tmp_bullets2.append(ExpansionBullet((_x, _y), cl.blue))
+            bulletss.append(tmp_bullets1)
+            bulletss.append(tmp_bullets2)
+            y += self.gap*math.sqrt(3)
+        self.bullets = [b for b in sum(bulletss, []) if self.pradius*0.7 < np.linalg.norm(self.ppos-b.pos)]
+    def release(self, t, ms, beats):
+        t -= self.t
+        for bullet in self.bullets:
+            if square_dist(self.game_step.reimu, bullet) < (self.game_step.reimu.radius+bullet.radius+self.graze)**2:
+                bullet.update_radius(bullet.radius+self.exspeed)
+                bullet.centercolor = (251, 180, 133)
+            else:
+                bullet.centercolor = cl.white
+        if beat2ms((0,0,0,4)) <= ms:
+            self.graze = float("inf")
+            self.__doc__ = """「膨張する時空間異常」"""
+        if beat2ms((0,3,3,3)) <= ms <= beat2ms((3,3,3,3)):
+            return self.bullets+[self.planet], []
+        else:
+            return self.bullets, []
+
+
+
 class Interpolation:
     def __init__(
             self,
@@ -790,11 +892,11 @@ class GameStep(AbstractStep):
         elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
             pass
         elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
-            self.sc( Hata2SpellCard(t, ms, self.beats, self) )
+            self.sc( Hata3SpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,0,3): #間奏2
             pass
         elif self.beats.ignite(0,0,2,3): #Aメロ2「雲を抜け 見える敵」
-            self.sc( Hata3SpellCard(t, ms, self.beats, self) )
+            self.sc( OutOfSightSpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,2,4): #Bメロ2「避けてゆけばいつかは」
             self.sc( ExpansionSpellCard(t, ms, self.beats, self) )
         elif self.beats.ignite(0,0,1,5): #2サビ「現在なら 変えられる」
@@ -849,31 +951,34 @@ class GameStep(AbstractStep):
             self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
         self.screen_display.blit(self.screen_info, (INFO_RECT.left, INFO_RECT.top))
         pg.draw.rect(self.screen_display, cl.green, BORDER_RECT, 2)
+        if self.clear:
+            display_l(self.screen_display, sp.reimu_s)
+            display_r(self.screen_display, sp.yukari_s)
     
     def print(self, txt: str) -> None:
         """INFOエリアにテキストを描画"""
-        self.screen_info.blit(ft.w30.font.render(txt, True, cl.white), (0, self.fontoffset))
-        self.fontoffset += ft.w30.fontsize
+        self.screen_info.blit(font(30).render(txt, True, cl.white), (0, self.fontoffset))
+        self.fontoffset += font(30).get_height()
 
 class TitleStep(AbstractStep):
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
         super().__init__(screen_display, clock)
-        self.screen_description = pg.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height), pg.SRCALPHA)
-        self.screen_playarea_color = cl.gray1
         self.offset = 0
         self.scroll_speed = 20
+        self.scroll_length= 620
+        self.margin_y = 300
 
     def play(self, t: int, controller_input: Dict) -> None:
         if controller_input.down:
             self.offset -= self.scroll_speed
         elif controller_input.up:
             self.offset += self.scroll_speed
-        if self.offset < -590: self.offset = -590
+        if self.offset < -(self.scroll_length+self.margin_y): self.offset = -(self.scroll_length+self.margin_y)
         if self.offset > 0: self.offset = 0
-        self.screen_display.blit(sp.bg, (0,0))
-        self.screen_display.blit(sp.logo, (DISPLAY_RECT.right-444, DISPLAY_RECT.bottom-390))
-        self.screen_description.blit(sp.description, (0,0))
-        self.screen_display.blit(sp.description, (BORDER_RECT.left+130, BORDER_RECT.top + self.offset))
+        self.screen_display.blit(sp.title_bg, (0,0))
+        display_l(self.screen_display, sp.reimu_s)
+        display_r(self.screen_display, sp.marisa_s)
+        self.screen_display.blit(sp.description, (350, self.margin_y + self.offset))
 
 DIALOG_SIZE = np.array([500, 200])
 DIALOG_RECT = pg.Rect(
@@ -909,13 +1014,14 @@ class ConfigStep(AbstractStep):
         else:
             self.print(self.txts[4])
 #        self.screen_display.blit(sp.witch1, (0,0))
-        self.screen_display.blit(sp.marisa, (DISPLAY_RECT.width-mw, DISPLAY_RECT.height-mh))
+        display_l(self.screen_display, sp.reimu_s)
+        display_r(self.screen_display, sp.marisa_s)
         self.screen_display.blit(self.screen_dialog, (DIALOG_RECT.left, DIALOG_RECT.top))
         pg.draw.rect(self.screen_display, cl.white, DIALOG_RECT, 4)
     def print(self, txts: str) -> None:
         for txt in txts.split("\n"):
-            self.screen_dialog.blit(ft.w30.font.render(txt, True, cl.white), (20, self.fontoffset))
-            self.fontoffset += ft.w30.fontsize
+            self.screen_dialog.blit(font(30).render(txt, True, cl.white), (20, self.fontoffset))
+            self.fontoffset += font(30).get_height()
 
 
 ################ ?MA メインループ ################
@@ -927,31 +1033,8 @@ class MainLoop:
         self.controller = MyController()
         self.clock = pg.time.Clock()
         self.current_step = TitleStep
-        se.cancel00 = pg.mixer.Sound("data/se_cancel00.wav")
-        se.ok00 = pg.mixer.Sound("data/se_ok00.wav")
-        se.slash = pg.mixer.Sound("data/se_slash.wav")
-        se.pldead00 = pg.mixer.Sound("data/se_pldead00.wav")
-        se.invalid = pg.mixer.Sound("data/se_invalid.wav")
-        se.extend = pg.mixer.Sound("data/se_extend.wav")
-        sp.bg = pg.image.load("data/bg.png")
-        sp.logo = pg.image.load("data/logo.png")
-        sp.description = pg.image.load("data/description4.png")
-        sp.pl00 = pg.image.load("data/w2x_pl00.png")
-        sp.pl10 = pg.image.load("data/w2x_pl10.png")
-        sp.sloweffect = pg.Surface((128, 128), pg.SRCALPHA)
-        sp.sloweffect.blit(pg.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
-        sp.eff_charge = pg.Surface((64, 64), pg.SRCALPHA)
-        sp.eff_charge.blit(pg.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
-        sp.etama7a = pg.image.load("data/etama7a.png")
-        sp.houi2 = pg.image.load("data/houi2.png")
-        sp.witch1 = pg.image.load("data/witch1.png")
-        sp.marisa = pg.image.load("data/marisa.png")
-        sp.yukari_s = pg.image.load("data/yukari_bs.png")
-        sp.yukari_b = pg.image.load("data/yukari_b.png")
-        sp.laspetxt = pg.image.load("data/laspetxt.png")
-        ft.w30.fontsize = 30
-        ft.w30.name = "msgothic"
-        ft.w30.font = pg.font.SysFont(ft.w30.name, ft.w30.fontsize)
+        se.load()
+        sp.load()
         pg.mixer.music.load("data/Yours.wav")
         pg.mixer.music.play(loops=-1)
 
@@ -1014,7 +1097,7 @@ class MainLoop:
                         self.restart_game()
                     if event.key == pg.K_ESCAPE:
                         self.back_to_title()
-                    if event.key == pg.K_z and self.current_step == TitleStep:
+                    if event.key == pg.K_c and self.current_step == TitleStep:
                         self.go_to_config()
                     if self.current_step == ConfigStep:
                         if event.key == pg.K_LEFT:
@@ -1029,7 +1112,7 @@ class MainLoop:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--beat', type=str, default="0000")
-    parser.add_argument('--bomb_stock', type=int, default=100)
+    parser.add_argument('--bomb_stock', type=int, default=9)
     parser.add_argument('--invincible', type=bool, default=False)
     CONFIG = Dict(parser.parse_args().__dict__)
     CONFIG["bomb_stock"] = CONFIG.bomb_stock
