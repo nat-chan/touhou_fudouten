@@ -7,54 +7,13 @@ import sys
 import math
 import argparse
 from random import random
-from collections import defaultdict
 from functools import lru_cache
-
-class se: #se用の名前空間
-    @classmethod
-    def load(se):
-        se.cancel00 = pg.mixer.Sound("data/se_cancel00.wav")
-        se.ok00 = pg.mixer.Sound("data/se_ok00.wav")
-        se.slash = pg.mixer.Sound("data/se_slash.wav")
-        se.pldead00 = pg.mixer.Sound("data/se_pldead00.wav")
-        se.invalid = pg.mixer.Sound("data/se_invalid.wav")
-        se.extend = pg.mixer.Sound("data/se_extend.wav")
-
-class sp: #sprite用の名前空間
-    @classmethod
-    def load(sp):
-        sp.bg = pg.image.load("data/bg.png")
-        sp.logo = pg.image.load("data/logo.png")
-        sp.description = pg.image.load("data/description4.png")
-        sp.pl00 = pg.image.load("data/w2x_pl00.png")
-        sp.pl10 = pg.image.load("data/w2x_pl10.png")
-        sp.sloweffect = pg.Surface((128, 128), pg.SRCALPHA)
-        sp.sloweffect.blit(pg.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
-        sp.eff_charge = pg.Surface((64, 64), pg.SRCALPHA)
-        sp.eff_charge.blit(pg.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
-        sp.etama7a = pg.image.load("data/etama7a.png")
-        sp.houi2 = pg.image.load("data/houi2.png")
-        sp.witch1 = pg.image.load("data/witch1.png")
-        sp.marisa = pg.image.load("data/marisa.png")
-        sp.yukari_bs = pg.image.load("data/yukari_bs.png")
-        sp.yukari_b = pg.image.load("data/yukari_b.png")
-        sp.laspetxt = pg.image.load("data/laspetxt.png")
-        sp.title_bg = pg.image.load("data/title_bg.png")
-        sp.reimu_t = pg.image.load("data/reimu_t.png")
-        sp.marisa_t = pg.image.load("data/marisa_t.png")
-        sp.yukari_t = pg.image.load("data/yukari_t.png")
-        sp.reimu_s = pg.image.load("data/reimu_s.png")
-        sp.marisa_s = pg.image.load("data/marisa_s.png")
-        sp.yukari_s = pg.image.load("data/yukari_r.png")
-
-@lru_cache(maxsize=None)
-def font(size, name="msgothic"):
-    return pg.font.SysFont(name, size)
 
 class Dict(addict_dict):
     def at(self, k: int) -> Any:
         return self[list(self.keys())[k]]
 
+LEVEL = [4, 7, 10]
 CONFIG = Dict()
 BPM = 190
 DISPLAY_RECT = pg.Rect(0, 0, 1280, 960)
@@ -88,6 +47,47 @@ pr = Dict(
     おてがみ=np.array([0, 0, 0, 0.7071, 0, 0, -0.5, 0], dtype=np.float64),
     はじっこ=np.array([0, 0, 0, -0.5, 0.8, 0, 0, 0], dtype=np.float64),
 )
+
+class se: #se用の名前空間
+    @classmethod
+    def load(se):
+        se.cancel00 = pg.mixer.Sound("data/se_cancel00.wav")
+        se.ok00 = pg.mixer.Sound("data/se_ok00.wav")
+        se.slash = pg.mixer.Sound("data/se_slash.wav")
+        se.pldead00 = pg.mixer.Sound("data/se_pldead00.wav")
+        se.invalid = pg.mixer.Sound("data/se_invalid.wav")
+        se.extend = pg.mixer.Sound("data/se_extend.wav")
+
+class sp: #sprite用の名前空間
+    @classmethod
+    def load(sp):
+        sp.bg = pg.image.load("data/bg.png")
+        sp.logo = pg.image.load("data/logo.png")
+        sp.description = pg.image.load("data/description5.png")
+        sp.pl00 = pg.image.load("data/w2x_pl00.png")
+        sp.pl10 = pg.image.load("data/w2x_pl10.png")
+        sp.sloweffect = pg.Surface((128, 128), pg.SRCALPHA)
+        sp.sloweffect.blit(pg.image.load("data/w2x_eff_sloweffect.png"), (0, 0), (0,0, 128, 128))
+        sp.eff_charge = pg.Surface((64, 64), pg.SRCALPHA)
+        sp.eff_charge.blit(pg.image.load("data/w2x_eff_charge.png"), (0, 0), (0,0, 128, 128))
+        sp.etama7a = pg.image.load("data/etama7a.png")
+        sp.houi2 = pg.image.load("data/houi2.png")
+        sp.witch1 = pg.image.load("data/witch1.png")
+        sp.marisa = pg.image.load("data/marisa.png")
+        sp.yukari_bs = pg.image.load("data/yukari_bs.png")
+        sp.yukari_b = pg.image.load("data/yukari_b.png")
+        sp.laspetxt = pg.image.load("data/laspetxt.png")
+        sp.title_bg = pg.image.load("data/title_bg.png")
+        sp.reimu_t = pg.image.load("data/reimu_t.png")
+        sp.marisa_t = pg.image.load("data/marisa_t.png")
+        sp.yukari_t = pg.image.load("data/yukari_t.png")
+        sp.reimu_s = pg.image.load("data/reimu_s.png")
+        sp.marisa_s = pg.image.load("data/marisa_s.png")
+        sp.yukari_s = pg.image.load("data/yukari_r.png")
+
+@lru_cache(maxsize=None)
+def font(size, name="msgothic"):
+    return pg.font.SysFont(name, size)
 
 def lifegame_step(a):
     DH = (-1,-1,-1,0,0,1,1,1)
@@ -966,7 +966,7 @@ class TitleStep(AbstractStep):
         self.offset = 0
         self.scroll_speed = 20
         self.scroll_length= 620
-        self.margin_y = 300
+        self.margin_y = 150
 
     def play(self, t: int, controller_input: Dict) -> None:
         if controller_input.down:
@@ -987,7 +987,6 @@ DIALOG_RECT = pg.Rect(
 class ConfigStep(AbstractStep):
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
         super().__init__(screen_display, clock)
-        self.screen_display.blit(sp.witch1, (0,0))
         self.screen_dialog = pg.Surface((DIALOG_RECT.width, DIALOG_RECT.height))
         self.txts = [
             "ボムを捨てて挑むって…\n不可能<インポッシブル>だぜ…\n馬鹿だろお前(呆れ)",
@@ -998,18 +997,18 @@ class ConfigStep(AbstractStep):
         ]
         self.fontoffset = 20
     def play(self, t: int, controller_input: Dict) -> None:
+        self.screen_display.blit(sp.witch1, (0,0))
         self.screen_dialog.fill(cl.black)
-        mw, mh = sp.marisa.get_size()
         self.fontoffset = 20
         self.print(f"{CONFIG.bomb_stock}{'★'*CONFIG.bomb_stock}")
         self.print("")
         if CONFIG.bomb_stock == 0:
             self.print(self.txts[0])
-        elif CONFIG.bomb_stock in range(1, 4):
+        elif CONFIG.bomb_stock in range(1, LEVEL[0]):
             self.print(self.txts[1])
-        elif CONFIG.bomb_stock in range(4, 7):
+        elif CONFIG.bomb_stock in range(4, LEVEL[1]):
             self.print(self.txts[2])
-        elif CONFIG.bomb_stock in range(7, 10):
+        elif CONFIG.bomb_stock in range(7, LEVEL[2]):
             self.print(self.txts[3])
         else:
             self.print(self.txts[4])
