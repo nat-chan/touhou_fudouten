@@ -123,6 +123,8 @@ GALAXY = [lifegame_str2mat([
 for i in range(7): GALAXY.append(lifegame_step(GALAXY[i]))
 
 ################ ?HE 補助関数群 ################
+def check_good_ending():
+    return CONFIG["bomb_stock"] < LEVEL[2] and CONFIG["ms"] == 0
 def display_l(screen, sprite):
     w, h = sprite.get_size()
     screen.blit(sprite, (0, DISPLAY_RECT.height-h))
@@ -818,6 +820,7 @@ class LastSpellCard(AbstractSpellCard):
         self.gain = 2*self.cspeed/1000
         self.gain2 = self.gap/1000
         self.game_step.reimu.pos = DEFAULT_POS.copy()
+        self.game_step.reimu.bomb_stock = 0
         self.e = ETAMA7A(self.center2, -self.game_step.reimu.radius)
         self.y = YUKARI_S(self.center2, -self.game_step.reimu.radius)
     def release(self, t, ms, beats):
@@ -845,6 +848,24 @@ class LastSpellCard(AbstractSpellCard):
         MS = beat2ms((0, 2, 0, 0))
         self.y.pos = self.center + (0, 6*np.sin(2*np.pi*(ms/MS))-40)
         return self.lwind+self.rwind, [self.e, self.y]
+
+TIME_SCHEDULE = Dict({k:v for k, v in {
+    (0,0,0,0): OneSpellCard,#開始
+    (0,0,1,0): None,#間奏0
+    (0,0,3,0): GalaxySpellCard,#Aメロ1「闇の中 光る星」
+    (0,0,3,1): None,#Bメロ1「飛んでゆけばいつかは」
+    (0,0,2,2): Hata3SpellCard,#1サビ「過去なら 捨ててゆけ」
+    (0,0,0,3): None,#間奏2
+    (0,0,2,3): OutOfSightSpellCard,#Aメロ2「雲を抜け 見える敵」
+    (0,0,2,4): ExpansionSpellCard,#Bメロ2「避けてゆけばいつかは」
+    (0,0,1,5): FlipSpellCard,#2サビ「現在なら 変えられる」
+    (0,0,1,6): AmeSpellCard,#間奏3(ドロップ)
+    (0,0,3,6): Hata1SpellCard,#3サビ「なんども あきらめた」(転調)
+    (0,0,1,7): None,#4サビ「最後は、ふり絞れ」(間を置かず)
+    (0,0,3,7): LastSpellCard,#間奏4(落ち着く)d
+    (0,0,1,8): None,#5サビ(ラスト)「まだ見ぬ 未来なら」
+}.items() if v is not None})
+
 
 ################ ?ST プレイ中の各ステップ ################
 class AbstractStep:
@@ -883,36 +904,11 @@ class GameStep(AbstractStep):
         self.beats = Beats([ms2beat(ms), self.beats[0]])
 
 ################ ?TI タイムスケジュール ################
-        if self.beats.ignite(0,0,0,0) and ms != -1: #再生終了で戻るのを防ぐ
-            self.sc( OneSpellCard(t, ms, self.beats, self) )
-        elif self.beats.ignite(0,0,1,0): #間奏0
-            pass
-        elif self.beats.ignite(0,0,3,0): #Aメロ1「闇の中 光る星」
-            self.sc( GalaxySpellCard(t, ms, self.beats, self) )
-        elif self.beats.ignite(0,0,3,1): #Bメロ1「飛んでゆけばいつかは」
-            pass
-        elif self.beats.ignite(0,0,2,2): #1サビ「過去なら 捨ててゆけ」
-            self.sc( Hata3SpellCard(t, ms, self.beats, self) )
-        elif self.beats.ignite(0,0,0,3): #間奏2
-            pass
-        elif self.beats.ignite(0,0,2,3): #Aメロ2「雲を抜け 見える敵」
-            self.sc( OutOfSightSpellCard(t, ms, self.beats, self) )
-        elif self.beats.ignite(0,0,2,4): #Bメロ2「避けてゆけばいつかは」
-            self.sc( ExpansionSpellCard(t, ms, self.beats, self) )
-        elif self.beats.ignite(0,0,1,5): #2サビ「現在なら 変えられる」
-            self.sc( FlipSpellCard(t, ms, self.beats, self) )
-        elif self.beats.ignite(0,0,1,6): #間奏3(ドロップ) # TODO トリエルの避ける弾幕みたいな
-            self.sc( AmeSpellCard(t, ms, self.beats, self) )
-        elif self.beats.ignite(0,0,3,6): #3サビ「なんども あきらめた」(転調)
-            self.sc( Hata1SpellCard(t, ms, self.beats, self) )
-        elif self.beats.ignite(0,0,1,7): #4サビ「最後は、ふり絞れ」(間を置かず)
-            pass
-        elif self.beats.ignite(0,0,3,7): #間奏4(落ち着く)
-            self.reimu.bomb_stock = 0
-            self.sc( LastSpellCard(t, ms, self.beats, self) )
-        elif self.beats.ignite(0,0,1,8): #5サビ(ラスト)「まだ見ぬ 未来なら」
-            pass
-        elif self.beats.ignite(0,2,3,8): #終了
+        for k, v in TIME_SCHEDULE.items():
+            if v is None: continue
+            if self.beats.ignite(*k):
+                self.sc(v(t, ms, self.beats, self))
+        if self.beats.ignite(0,2,3,8): #終了
             self.reimu.controllable = False
             self.clear = True
 
@@ -980,7 +976,7 @@ class TitleStep(AbstractStep):
         display_r(self.screen_display, sp.marisa_s)
         self.screen_display.blit(sp.description, (350, self.margin_y + self.offset))
 
-DIALOG_SIZE = np.array([500, 200])
+DIALOG_SIZE = np.array([500, 500])
 DIALOG_RECT = pg.Rect(
     *(DISPLAY_CENTER-DIALOG_SIZE/2+(0, 200)), *DIALOG_SIZE
 )
@@ -995,31 +991,48 @@ class ConfigStep(AbstractStep):
             "私のボム持ってけよ、\n普段<ノーマル>の実力\n見せて欲しいのぜ!",
             "そんなに持ってったら\n私が破産<イージー>\nしちゃうのぜ(泣)"
         ]
+        self.skip = 0
         self.fontoffset = 20
     def play(self, t: int, controller_input: Dict) -> None:
         self.screen_display.blit(sp.witch1, (0,0))
         self.screen_dialog.fill(cl.black)
         self.fontoffset = 20
-        self.print(f"{CONFIG.bomb_stock}{'★'*CONFIG.bomb_stock}")
-        self.print("")
+        self.print("→で魔理沙からボムを貰おう!")
+        self.print(f"{CONFIG.bomb_stock}{'★'*CONFIG.bomb_stock}", color=cl.green)
+        self.print()
         if CONFIG.bomb_stock == 0:
-            self.print(self.txts[0])
+            self.print(self.txts[0], color=cl.yellow)
         elif CONFIG.bomb_stock in range(1, LEVEL[0]):
-            self.print(self.txts[1])
+            self.print(self.txts[1], color=cl.yellow)
         elif CONFIG.bomb_stock in range(4, LEVEL[1]):
-            self.print(self.txts[2])
+            self.print(self.txts[2], color=cl.yellow)
         elif CONFIG.bomb_stock in range(7, LEVEL[2]):
-            self.print(self.txts[3])
+            self.print(self.txts[3], color=cl.yellow)
         else:
-            self.print(self.txts[4])
-#        self.screen_display.blit(sp.witch1, (0,0))
+            self.print(self.txts[4], color=cl.yellow)
+
+        self.print()
+        self.print("↓で八雲紫の力でワープしよう!")
+        self.print(f"{self.skip} {TIME_SCHEDULE.at(self.skip).__doc__}", color=cl.green)
+        self.print()
+        if self.skip == 0:
+            self.print(f"こんなん自力で十分よ！", color=cl.red)
+            self.print()
+        else:
+            self.print(f"癪だけど紫に頼むか…", color=cl.red)
+            self.print(f"宇宙にスキマって無茶かしら?", color=cl.red)
+        self.print()
+        if check_good_ending():
+            self.print("グッドエンディングに到達可能")
+        else:
+            self.print("練習用モードです")
         display_l(self.screen_display, sp.reimu_s)
         display_r(self.screen_display, sp.marisa_s)
         self.screen_display.blit(self.screen_dialog, (DIALOG_RECT.left, DIALOG_RECT.top))
         pg.draw.rect(self.screen_display, cl.white, DIALOG_RECT, 4)
-    def print(self, txts: str) -> None:
+    def print(self, txts: str = "", color=cl.white) -> None:
         for txt in txts.split("\n"):
-            self.screen_dialog.blit(font(30).render(txt, True, cl.white), (20, self.fontoffset))
+            self.screen_dialog.blit(font(30).render(txt, True, color), (20, self.fontoffset))
             self.fontoffset += font(30).get_height()
 
 
@@ -1105,6 +1118,16 @@ class MainLoop:
                             se.ok00.play()
                         if event.key == pg.K_RIGHT:
                             CONFIG["bomb_stock"] += 1
+                            se.ok00.play()
+                        if event.key == pg.K_UP:
+                            self.config_step.skip = (self.config_step.skip-1)%len(TIME_SCHEDULE)
+                        if event.key == pg.K_DOWN:
+                            self.config_step.skip = (self.config_step.skip+1)%len(TIME_SCHEDULE)
+                        if event.key in [pg.K_UP, pg.K_DOWN]:
+                            for i, (k, v) in enumerate(TIME_SCHEDULE.items()):
+                                if i == self.config_step.skip:
+                                    CONFIG["beat"] = k
+                                    CONFIG["ms"] = math.ceil(beat2ms(CONFIG["beat"]))
                             se.ok00.play()
             self.t += 1
 
