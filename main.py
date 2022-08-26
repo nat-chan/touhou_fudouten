@@ -233,6 +233,38 @@ class MyController: # joystick対応を視野に入れてclass化
             retry=keys[pg.K_r],
         )
 
+class Interpolation:
+    def __init__(self, start_beat, end_beat, start_pos, end_pos):
+            self.start_ms = beat2ms(start_beat)
+            self.end_ms = beat2ms(end_beat)
+            self.start_pos = start_pos
+            self.end_pos = end_pos
+    def __call__(self, ms):
+            p = (ms-self.start_ms)/(self.end_ms-self.start_ms)
+            return (1-p)*self.start_pos+p*self.end_pos
+
+class Dialog(pg.Surface):
+    def __init__(self, rect, fheight=30, margin=20, border=4, border_color=cl.white) -> None:
+        super().__init__((rect.width, rect.height))
+        self.rect = rect
+        self.font = font(fheight)
+        self.margin = margin
+        self.offset = margin
+        self.border = border
+        self.border_color = border_color
+    def print(self, txts: str = "", color=cl.white) -> None:
+        for txt in txts.split("\n"):
+            self.blit(self.font.render(txt, True, color), (self.margin, self.offset))
+            self.offset += self.font.get_height()
+    def draw_border(self) -> None:
+        pg.draw.rect(self, self.border_color, self.rect, self.border)
+    def start(self, bg_color) -> None:
+        self.offset = self.margin
+        self.fill(bg_color)
+    def end(self, screen: pg.Surface) -> None:
+        screen.blit(self, (self.rect.left, self.rect.top))
+        pg.draw.rect(screen, self.border_color, self.rect, self.border)
+
 ################ ?RE 霊夢(自機) ################
 class Reimu:
     """自機のクラス"""
@@ -484,24 +516,6 @@ class OneSpellCard(AbstractSpellCard):
             bullet.update()
         return self.bullets+[self.lcc, self.rcc], []
 
-
-def hata_xyrgbs(p: np.ndarray, calc_rgb=True) -> Tuple[List[Tuple[int,int]], Optional[List[Tuple[int,int,int]]]]:
-    """パラメタpの畑写像から座標と色を返す"""
-    zs = hatafast(p)
-    xys = list()
-    rgbs = list() if calc_rgb else None
-    for i, z in enumerate(zs):
-        if calc_rgb: rgb = hsv2rgb(i/len(zs), 1, 1)
-        xy = z2xy(z)
-        X = 2*np.array([-400+220*i for i in range(3)])
-        Y = 2*np.array(([-150+110*i for i in range(4)]))
-        for x in X:
-            for y in Y:
-                _xy = (xy[0]+x, xy[1]+y)
-                xys.append(_xy)
-                if calc_rgb: rgbs.append(rgb)
-    return xys, rgbs
-
 class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
     """相似「葉脈標本」"""
     def __init__(self, t, ms, beats, game_step):
@@ -509,10 +523,27 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
         self.params = [pr.くるくる,pr.たちきの,pr.ひしがた,pr.はっぱや]
         self.T = round(len(self.params)/(BPM/(60*1000)))
         r = self.intp(0)
-        self.bullets = [SmallCircleBullet(xy, rgb)for xy, rgb in zip(*hata_xyrgbs(r))]
+        self.bullets = [SmallCircleBullet(xy, rgb)for xy, rgb in zip(*self.hata_xyrgbs(r))]
         game_step.reimu.pos = PLAYAREA_CENTER.copy()
         self.game_step.reimu.controllable = False
         self.controllable_beat = count2beat(beat2count(beats[0])+2)
+    @staticmethod
+    def hata_xyrgbs(p: np.ndarray, calc_rgb=True) -> Tuple[List[Tuple[int,int]], Optional[List[Tuple[int,int,int]]]]:
+        """パラメタpの畑写像から座標と色を返す"""
+        zs = hatafast(p)
+        xys = list()
+        rgbs = list() if calc_rgb else None
+        for i, z in enumerate(zs):
+            if calc_rgb: rgb = hsv2rgb(i/len(zs), 1, 1)
+            xy = z2xy(z)
+            X = 2*np.array([-400+220*i for i in range(3)])
+            Y = 2*np.array(([-150+110*i for i in range(4)]))
+            for x in X:
+                for y in Y:
+                    _xy = (xy[0]+x, xy[1]+y)
+                    xys.append(_xy)
+                    if calc_rgb: rgbs.append(rgb)
+        return xys, rgbs
     def intp(self, ms):
         ms -= self.t
         p = self.params[(ms//self.T)%len(self.params)]
@@ -524,7 +555,7 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
             self.game_step.reimu.controllable = True
         if ms == self.ms: return self.bullets, []
         r = self.intp(ms)
-        xys, _ = hata_xyrgbs(r, calc_rgb=False)
+        xys, _ = self.hata_xyrgbs(r, calc_rgb=False)
         tmp_bullets = list()
         for i, xy in enumerate(xys):
             self.bullets[i].pos = xy
@@ -630,24 +661,6 @@ class OutOfSightSpellCard(AbstractSpellCard):
             return self.bullets+[self.planet], []
         else:
             return self.bullets, []
-
-
-
-class Interpolation:
-    def __init__(
-            self,
-            start_beat=(0, 1, 3, 0),
-            end_beat=(0,2,3,0),
-            start_pos=PLAYAREA_CENTER-(PLAYAREA_RECT.width/4-PLAYAREA_RECT.width/13/2, +PLAYAREA_RECT.height/2),
-            end_pos=PLAYAREA_CENTER-(PLAYAREA_RECT.width/4-PLAYAREA_RECT.width/13/2, 0),
-        ):
-            self.start_ms = beat2ms(start_beat)
-            self.end_ms = beat2ms(end_beat)
-            self.start_pos = start_pos
-            self.end_pos = end_pos
-    def __call__(self, ms):
-            p = (ms-self.start_ms)/(self.end_ms-self.start_ms)
-            return (1-p)*self.start_pos+p*self.end_pos
 
 class GalaxySpellCard(AbstractSpellCard):
     """銀河「ライフゲーム」"""
@@ -849,6 +862,7 @@ class LastSpellCard(AbstractSpellCard):
         self.y.pos = self.center + (0, 6*np.sin(2*np.pi*(ms/MS))-40)
         return self.lwind+self.rwind, [self.e, self.y]
 
+################ ?TI タイムスケジュール ################
 TIME_SCHEDULE = Dict({k:v for k, v in {
     (0,0,0,0): OneSpellCard,#開始
     (0,0,1,0): None,#間奏0
@@ -877,10 +891,8 @@ class GameStep(AbstractStep):
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
         super().__init__(screen_display, clock)
         self.screen_playarea = pg.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height))
-        self.screen_playarea_color = cl.gray1
-        self.screen_info = pg.Surface((INFO_RECT.width, INFO_RECT.height))
-        self.screen_info_color = cl.darkblue
-        self.fontoffset = 0
+        self.screen_playarea_color = cl.black
+        self.dialog = Dialog(INFO_RECT, border=2, margin=5)
         self.reimu = Reimu()
 
         self.screen_display.blit(sp.bg, (0,0))
@@ -899,11 +911,10 @@ class GameStep(AbstractStep):
 
     def play(self, t: int, controller_input: Dict) -> None:
         self.screen_playarea.fill(self.screen_playarea_color)
-        self.screen_info.fill(self.screen_info_color)
+        self.dialog.start(cl.darkblue)
         ms = pg.mixer.music.get_pos() + CONFIG["ms"]
         self.beats = Beats([ms2beat(ms), self.beats[0]])
 
-################ ?TI タイムスケジュール ################
         for k, v in TIME_SCHEDULE.items():
             if v is None: continue
             if self.beats.ignite(*k):
@@ -930,32 +941,28 @@ class GameStep(AbstractStep):
 
         # テキスト描画処理
         self.fontoffset = 0
-        self.print(f"{self.spell_card.__doc__}")
-        self.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
-        self.print(f"fps:{self.clock.get_fps():.2f}")
-        self.print(f"弾数: {len(bullets)}")
-        self.print(f"■□♡♥☆★こんにちわ世界")
-        self.print(f"{ms}")
-        self.print(f"{self.beats[0]}")
+        self.dialog.print(f"{self.spell_card.__doc__}")
+        self.dialog.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
+        self.dialog.print(f"fps:{self.clock.get_fps():.2f}")
+        self.dialog.print(f"弾数: {len(bullets)}")
+        self.dialog.print(f"■□♡♥☆★こんにちわ世界")
+        self.dialog.print(f"{ms}")
+        self.dialog.print(f"{self.beats[0]}")
         for s in beat2squares(self.beats[0]):
-            self.print(s)
+            self.dialog.print(s)
 
         if self.flip_x or self.flip_y:
             screen_playarea_flipped = pg.transform.flip(self.screen_playarea, self.flip_x, self.flip_y)
             self.screen_display.blit(screen_playarea_flipped, (BORDER_RECT.left, BORDER_RECT.top))
         else:
             self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
-        self.screen_display.blit(self.screen_info, (INFO_RECT.left, INFO_RECT.top))
+        self.dialog.end(self.screen_display)
+#        self.screen_display.blit(self.dialog, (INFO_RECT.left, INFO_RECT.top))
         pg.draw.rect(self.screen_display, cl.green, BORDER_RECT, 2)
         if self.clear:
             display_l(self.screen_display, sp.reimu_s)
             display_r(self.screen_display, sp.yukari_s)
     
-    def print(self, txt: str) -> None:
-        """INFOエリアにテキストを描画"""
-        self.screen_info.blit(font(30).render(txt, True, cl.white), (0, self.fontoffset))
-        self.fontoffset += font(30).get_height()
-
 class TitleStep(AbstractStep):
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
         super().__init__(screen_display, clock)
@@ -976,14 +983,12 @@ class TitleStep(AbstractStep):
         display_r(self.screen_display, sp.marisa_s)
         self.screen_display.blit(sp.description, (350, self.margin_y + self.offset))
 
-DIALOG_SIZE = np.array([500, 500])
-DIALOG_RECT = pg.Rect(
-    *(DISPLAY_CENTER-DIALOG_SIZE/2+(0, 200)), *DIALOG_SIZE
-)
 class ConfigStep(AbstractStep):
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
         super().__init__(screen_display, clock)
-        self.screen_dialog = pg.Surface((DIALOG_RECT.width, DIALOG_RECT.height))
+        dialog_size = np.array([500, 500])
+        dialog_pos = DISPLAY_CENTER-dialog_size/2 + (0, 200)
+        self.dialog = Dialog(pg.Rect(*dialog_pos, *dialog_size))
         self.txts = [
             "ボムを捨てて挑むって…\n不可能<インポッシブル>だぜ…\n馬鹿だろお前(呆れ)",
             "自前のボムだけで挑むなんて…\n狂気<ルナティック>だぜ…\n人間やめるのか？",
@@ -995,45 +1000,39 @@ class ConfigStep(AbstractStep):
         self.fontoffset = 20
     def play(self, t: int, controller_input: Dict) -> None:
         self.screen_display.blit(sp.witch1, (0,0))
-        self.screen_dialog.fill(cl.black)
-        self.fontoffset = 20
-        self.print("→で魔理沙からボムを貰おう!")
-        self.print(f"{CONFIG.bomb_stock}{'★'*CONFIG.bomb_stock}", color=cl.green)
-        self.print()
+        self.dialog.start(cl.black)
+        self.dialog.print("→で魔理沙からボムを貰おう!")
+        self.dialog.print(f"{CONFIG.bomb_stock}{'★'*CONFIG.bomb_stock}", color=cl.green)
+        self.dialog.print()
         if CONFIG.bomb_stock == 0:
-            self.print(self.txts[0], color=cl.yellow)
+            self.dialog.print(self.txts[0], color=cl.yellow)
         elif CONFIG.bomb_stock in range(1, LEVEL[0]):
-            self.print(self.txts[1], color=cl.yellow)
+            self.dialog.print(self.txts[1], color=cl.yellow)
         elif CONFIG.bomb_stock in range(4, LEVEL[1]):
-            self.print(self.txts[2], color=cl.yellow)
+            self.dialog.print(self.txts[2], color=cl.yellow)
         elif CONFIG.bomb_stock in range(7, LEVEL[2]):
-            self.print(self.txts[3], color=cl.yellow)
+            self.dialog.print(self.txts[3], color=cl.yellow)
         else:
-            self.print(self.txts[4], color=cl.yellow)
+            self.dialog.print(self.txts[4], color=cl.yellow)
 
-        self.print()
-        self.print("↓で八雲紫の力でワープしよう!")
-        self.print(f"{self.skip} {TIME_SCHEDULE.at(self.skip).__doc__}", color=cl.green)
-        self.print()
+        self.dialog.print()
+        self.dialog.print("↓で八雲紫の力でワープしよう!")
+        self.dialog.print(f"{self.skip} {TIME_SCHEDULE.at(self.skip).__doc__}", color=cl.green)
+        self.dialog.print()
         if self.skip == 0:
-            self.print(f"こんなん自力で十分よ！", color=cl.red)
-            self.print()
+            self.dialog.print(f"こんなん自力で十分よ！", color=cl.red)
+            self.dialog.print()
         else:
-            self.print(f"癪だけど紫に頼むか…", color=cl.red)
-            self.print(f"宇宙にスキマって無茶かしら?", color=cl.red)
-        self.print()
+            self.dialog.print(f"癪だけど紫に頼むか…", color=cl.red)
+            self.dialog.print(f"宇宙にスキマって無茶かしら?", color=cl.red)
+        self.dialog.print()
         if check_good_ending():
-            self.print("グッドエンディングに到達可能")
+            self.dialog.print("グッドエンディングに到達可能")
         else:
-            self.print("練習用モードです")
+            self.dialog.print("練習用モードです")
         display_l(self.screen_display, sp.reimu_s)
         display_r(self.screen_display, sp.marisa_s)
-        self.screen_display.blit(self.screen_dialog, (DIALOG_RECT.left, DIALOG_RECT.top))
-        pg.draw.rect(self.screen_display, cl.white, DIALOG_RECT, 4)
-    def print(self, txts: str = "", color=cl.white) -> None:
-        for txt in txts.split("\n"):
-            self.screen_dialog.blit(font(30).render(txt, True, color), (20, self.fontoffset))
-            self.fontoffset += font(30).get_height()
+        self.dialog.end(self.screen_display)
 
 
 ################ ?MA メインループ ################
