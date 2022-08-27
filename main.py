@@ -73,20 +73,17 @@ class sp: #sprite用の名前空間
         sp.etama7a = pg.image.load("data/etama7a.png")
         sp.houi2 = pg.image.load("data/houi2.png")
         sp.witch1 = pg.image.load("data/witch1.png")
-        sp.marisa = pg.image.load("data/marisa.png")
         sp.yukari_bs = pg.image.load("data/yukari_bs.png")
-        sp.yukari_b = pg.image.load("data/yukari_b.png")
         sp.laspetxt = pg.image.load("data/laspetxt.png")
         sp.title_bg = pg.image.load("data/title_bg.png")
-        sp.reimu_t = pg.image.load("data/reimu_t.png")
-        sp.marisa_t = pg.image.load("data/marisa_t.png")
-        sp.yukari_t = pg.image.load("data/yukari_t.png")
-        sp.reimu_s = pg.image.load("data/reimu_s.png")
-        sp.marisa_s = pg.image.load("data/marisa_s.png")
-        sp.yukari_s = pg.image.load("data/yukari_r.png")
+        sp.reimu_l = pg.image.load("data/reimu_l.png")
+        sp.marisa_r = pg.image.load("data/marisa_r.png")
+        sp.yukari_r = pg.image.load("data/yukari_r.png")
 
 @lru_cache(maxsize=None)
-def font(size, name="msgothic"):
+def font(size, name="data/x12y16pxMaruMonica.ttf"):
+    if name[:5] == "data/":
+        return  pg.font.Font(name, size)
     return pg.font.SysFont(name, size)
 
 def lifegame_step(a):
@@ -244,7 +241,7 @@ class Interpolation:
             return (1-p)*self.start_pos+p*self.end_pos
 
 class Dialog(pg.Surface):
-    def __init__(self, rect, fheight=30, margin=20, border=4, border_color=cl.white) -> None:
+    def __init__(self, rect, fheight=30, margin=20, border=2, border_color=cl.white) -> None:
         super().__init__((rect.width, rect.height))
         self.rect = rect
         self.font = font(fheight)
@@ -447,22 +444,9 @@ class ExpansionBullet(CircleBullet):
     def update_radius(self, radius):
         self.radius = radius
         self.border = round(self._border/self._radius*radius)
-class ETAMA7A(AbstractBullet):
-    def draw(self, screen):
-        screen.blit(sp.etama7a, self.pos-(128, 128), (0, 0, 256, 256))
-class HOUI2(AbstractBullet):
-    def draw(self, screen):
-        sprite = sp.houi2
-        size = sprite.get_size()
-        screen.blit(sprite, self.pos-(size[0]/2, size[1]/2), (0, 0, *size))
-class YUKARI_S(AbstractBullet):
-    def draw(self, screen):
-        sprite = sp.yukari_bs
-        size = sprite.get_size()
-        screen.blit(sprite, self.pos-(size[0]/2, size[1]/2), (0, 0, *size))
 class Target(AbstractBullet):
-    def __init__(self, pos, sprite):
-        super().__init__(pos, 0)
+    def __init__(self, pos, sprite, radius=0):
+        super().__init__(pos, radius)
         self.sprite = sprite
     def draw(self, screen):
         size = self.sprite.get_size()
@@ -480,6 +464,12 @@ class AbstractSpellCard:
         self.game_step.reimu.guard_spellcard(t, ms)
     def release(self, t, ms, beats): return [], []
     def finalize(self): pass
+    def screen_out(self, bullets):
+        tmp_bullets = list()
+        for bullet in bullets:
+            if PLAYAREA_RECT.collidepoint(*bullet.pos):
+                tmp_bullets.append(bullet)
+        return tmp_bullets
 
 class OneSpellCard(AbstractSpellCard):
     """離陸「旅の始まり」"""
@@ -739,7 +729,7 @@ class FlipSpellCard(AbstractSpellCard):
         self.earch_radius = 100
         self.way = 32
         self.bullets = list()
-        self.blackhole = HOUI2(PLAYAREA_CENTER, self.earch_radius)
+        self.blackhole = Target(PLAYAREA_CENTER, sp.houi2, self.earch_radius)
         self.game_step.reimu.controllable = False
         self.controllable_beat = count2beat(beat2count(beats[0])+2)
     def release(self, t, ms, beats):
@@ -816,6 +806,7 @@ class AmeSpellCard(AbstractSpellCard):
                 bullet.direction += (dx, 0)
             if square_dist(self.game_step.reimu, bullet) < 100:
                 bullet.pos = (0,0)
+        self.bullets = self.screen_out(self.bullets)
         return self.bullets, []
 
 
@@ -834,8 +825,8 @@ class LastSpellCard(AbstractSpellCard):
         self.gain2 = self.gap/1000
         self.game_step.reimu.pos = DEFAULT_POS.copy()
         self.game_step.reimu.bomb_stock = 0
-        self.e = ETAMA7A(self.center2, -self.game_step.reimu.radius)
-        self.y = YUKARI_S(self.center2, -self.game_step.reimu.radius)
+        self.e = Target(self.center2, sp.etama7a)
+        self.y = Target(self.center2, sp.yukari_bs)
     def release(self, t, ms, beats):
         t -= self.t
         T = 60*10
@@ -876,7 +867,7 @@ TIME_SCHEDULE = Dict({k:v for k, v in {
     (0,0,1,6): AmeSpellCard,#間奏3(ドロップ)
     (0,0,3,6): Hata1SpellCard,#3サビ「なんども あきらめた」(転調)
     (0,0,1,7): None,#4サビ「最後は、ふり絞れ」(間を置かず)
-    (0,0,3,7): LastSpellCard,#間奏4(落ち着く)d
+    (0,0,3,7): LastSpellCard,#間奏4(落ち着く)
     (0,0,1,8): None,#5サビ(ラスト)「まだ見ぬ 未来なら」
 }.items() if v is not None})
 
@@ -892,7 +883,10 @@ class GameStep(AbstractStep):
         super().__init__(screen_display, clock)
         self.screen_playarea = pg.Surface((PLAYAREA_RECT.width, PLAYAREA_RECT.height))
         self.screen_playarea_color = cl.black
-        self.dialog = Dialog(INFO_RECT, border=2, margin=5)
+        self.info = Dialog(INFO_RECT, border=2, margin=5)
+        dialog_size = np.array([530, 200])
+        dialog_pos = DISPLAY_CENTER-dialog_size/2 + (-60, 300)
+        self.dialog = Dialog(pg.Rect(*dialog_pos, *dialog_size))
         self.reimu = Reimu()
 
         self.screen_display.blit(sp.bg, (0,0))
@@ -904,6 +898,24 @@ class GameStep(AbstractStep):
         self.flip_y = False
         self.laspetxt = Target(PLAYAREA_CENTER, sp.laspetxt)
         self.clear = False
+        self.i = 0
+        self.txts = [
+            ("…はじめまして？", cl.purple),
+            ("うわっ、ほんとに居た！妖怪かしら？\n…でもその声はずっと聴こえていた歌と一緒ね。", cl.red),
+            ("わたしはアンドロイドです、\nアンドロイドの「結月ゆかり」です。\n\n100年ぶりに人間に逢えたわ。\nずっと孤独だったの。", cl.purple),
+            ("なんだってこんな場所に居るのよ？\n", cl.red),
+            ("それはこの星に不時着してしまって…\n救難信号として歌をずっと歌っていたの。\n\n途中諦めかけたけど、\n無駄じゃなかったってことね。", cl.purple),
+            ("それは…なかなか凄まじいわね、\n\n私も結構酷い目にあってるけど方だけど、\nそんな経験はなかなか無いわ。", cl.red),
+            ("貴方は動く星々を避けながら、\n最後まで私の歌を聞いてくれたのね。\n\nすごく嬉しいわ…\n星々を避けることがすごく上手なのね。", cl.purple),
+            ("そうね？普段から\n似たような事をやっているからかしら？\nたぶん避ける事なら宇宙で一番は私よ！", cl.red),
+            ("申し遅れたけど、私は「博麗霊夢」、地球にある\n幻想郷って場所で巫女をやっているわ。\n\nしかし、ここまで来るのは大変だったわ。\n何よあの弾幕は！", cl.red),
+            ("ここの周りの星々は、\n不安定な重力場が互いに影響しあっていて\n複雑でカオスな軌道を動くの。", cl.purple),
+            ("私達がいるこの星だけなのよ、\n不動点＜fixed point＞なのは。そのせいで\n私はここからずっと脱出できないでいたの。", cl.purple),
+            ("なるほど…\nだから宇宙から歌が聴こえていたのね、\n謎が解けてスッキリしたわ。\n\n…それで、アンタはこれからどうするのよ？", cl.red),
+            ("そうね…今まで諦めていたけど、\n貴方についていったら、\n私も一緒に脱出できるかもしれない！\n\n勿論、貴方が良ければだけど…", cl.purple),
+            ("こうなる展開は正直薄々予想してたわ。\n\nしょうがないわねぇ…\nしっかりつかまってなさいよ？\n振り落とされないようにね！", cl.red),
+            ("地球に帰還します、このまま進んでください。", cl.white),
+        ]
 
     def sc(self, spell_card):
         self.spell_card.finalize()
@@ -911,7 +923,7 @@ class GameStep(AbstractStep):
 
     def play(self, t: int, controller_input: Dict) -> None:
         self.screen_playarea.fill(self.screen_playarea_color)
-        self.dialog.start(cl.darkblue)
+        self.info.start(cl.black)
         ms = pg.mixer.music.get_pos() + CONFIG["ms"]
         self.beats = Beats([ms2beat(ms), self.beats[0]])
 
@@ -941,27 +953,30 @@ class GameStep(AbstractStep):
 
         # テキスト描画処理
         self.fontoffset = 0
-        self.dialog.print(f"{self.spell_card.__doc__}")
-        self.dialog.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}")
-        self.dialog.print(f"fps:{self.clock.get_fps():.2f}")
-        self.dialog.print(f"弾数: {len(bullets)}")
-        self.dialog.print(f"■□♡♥☆★こんにちわ世界")
-        self.dialog.print(f"{ms}")
-        self.dialog.print(f"{self.beats[0]}")
+        self.info.print(f"{self.spell_card.__doc__}")
+        self.info.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}", color=cl.green)
+        self.info.print(f"fps:{self.clock.get_fps():.2f}")
+        self.info.print(f"弾数: {len(bullets)}")
+        self.info.print(f"■□♡♥☆★こんにちわ世界")
+        self.info.print(f"{ms}")
+        self.info.print(f"{self.beats[0]}")
         for s in beat2squares(self.beats[0]):
-            self.dialog.print(s)
+            self.info.print(s)
 
         if self.flip_x or self.flip_y:
             screen_playarea_flipped = pg.transform.flip(self.screen_playarea, self.flip_x, self.flip_y)
             self.screen_display.blit(screen_playarea_flipped, (BORDER_RECT.left, BORDER_RECT.top))
         else:
             self.screen_display.blit(self.screen_playarea, (BORDER_RECT.left, BORDER_RECT.top))
-        self.dialog.end(self.screen_display)
+        self.info.end(self.screen_display)
 #        self.screen_display.blit(self.dialog, (INFO_RECT.left, INFO_RECT.top))
         pg.draw.rect(self.screen_display, cl.green, BORDER_RECT, 2)
         if self.clear:
-            display_l(self.screen_display, sp.reimu_s)
-            display_r(self.screen_display, sp.yukari_s)
+            display_l(self.screen_display, sp.reimu_l)
+            display_r(self.screen_display, sp.yukari_r)
+            self.dialog.start(cl.black)
+            self.dialog.print(*self.txts[self.i])
+            self.dialog.end(self.screen_display)
     
 class TitleStep(AbstractStep):
     def __init__(self, screen_display: pg.Surface, clock: pg.time.Clock) -> None:
@@ -979,8 +994,8 @@ class TitleStep(AbstractStep):
         if self.offset < -(self.scroll_length+self.margin_y): self.offset = -(self.scroll_length+self.margin_y)
         if self.offset > 0: self.offset = 0
         self.screen_display.blit(sp.title_bg, (0,0))
-        display_l(self.screen_display, sp.reimu_s)
-        display_r(self.screen_display, sp.marisa_s)
+        display_l(self.screen_display, sp.reimu_l)
+        display_r(self.screen_display, sp.marisa_r)
         self.screen_display.blit(sp.description, (350, self.margin_y + self.offset))
 
 class ConfigStep(AbstractStep):
@@ -1001,7 +1016,7 @@ class ConfigStep(AbstractStep):
     def play(self, t: int, controller_input: Dict) -> None:
         self.screen_display.blit(sp.witch1, (0,0))
         self.dialog.start(cl.black)
-        self.dialog.print("→で魔理沙からボムを貰おう!")
+        self.dialog.print("で魔理沙からボムを貰おう!")
         self.dialog.print(f"{CONFIG.bomb_stock}{'★'*CONFIG.bomb_stock}", color=cl.green)
         self.dialog.print()
         if CONFIG.bomb_stock == 0:
@@ -1016,7 +1031,7 @@ class ConfigStep(AbstractStep):
             self.dialog.print(self.txts[4], color=cl.yellow)
 
         self.dialog.print()
-        self.dialog.print("↓で八雲紫の力でワープしよう!")
+        self.dialog.print("で八雲紫の力でワープしよう!")
         self.dialog.print(f"{self.skip} {TIME_SCHEDULE.at(self.skip).__doc__}", color=cl.green)
         self.dialog.print()
         if self.skip == 0:
@@ -1030,8 +1045,8 @@ class ConfigStep(AbstractStep):
             self.dialog.print("グッドエンディングに到達可能")
         else:
             self.dialog.print("練習用モードです")
-        display_l(self.screen_display, sp.reimu_s)
-        display_r(self.screen_display, sp.marisa_s)
+        display_l(self.screen_display, sp.reimu_l)
+        display_r(self.screen_display, sp.marisa_r)
         self.dialog.end(self.screen_display)
 
 
@@ -1110,6 +1125,16 @@ class MainLoop:
                         self.back_to_title()
                     if event.key == pg.K_c and self.current_step == TitleStep:
                         self.go_to_config()
+                    if self.current_step == GameStep:
+                        if self.game_step.clear:
+                            if event.key == pg.K_LEFT:
+                                self.game_step.i -= 1
+                                if self.game_step.i < 0: self.game_step.i = 0
+                            if event.key == pg.K_RIGHT:
+                                self.game_step.i += 1
+                                if len(self.game_step.txts)-1 < self.game_step.i:
+#                                    self.game_step.i = len(self.game_step.txts)-1
+                                    self.back_to_title()
                     if self.current_step == ConfigStep:
                         if event.key == pg.K_LEFT:
                             CONFIG["bomb_stock"] -= 1
