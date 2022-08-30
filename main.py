@@ -8,6 +8,7 @@ import math
 import argparse
 from random import random
 from functools import lru_cache
+#238, 102
 
 class Dict(addict_dict):
     def at(self, k: int) -> Any:
@@ -15,7 +16,7 @@ class Dict(addict_dict):
 
 LEVEL = [4, 7, 10]
 CONFIG = Dict()
-BPM = 190
+BPM = 142
 DISPLAY_RECT = pg.Rect(0, 0, 1280, 960)
 BORDER_RECT = pg.Rect(62, 30, 834-62, 930-30)
 PLAYAREA_RECT = pg.Rect(0, 0, 2*386, 2*450)
@@ -23,6 +24,7 @@ DISPLAY_CENTER = np.array([DISPLAY_RECT.left*.5+DISPLAY_RECT.right*.5, DISPLAY_R
 PLAYAREA_CENTER = np.array([PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.top*.5+PLAYAREA_RECT.bottom*.5])
 PLAYAREA_MARGIN = 40
 DEFAULT_POS = np.array((PLAYAREA_RECT.left*.5+PLAYAREA_RECT.right*.5, PLAYAREA_RECT.bottom+PLAYAREA_MARGIN))
+TELEPORT = 120
 INFO_RECT = pg.Rect(834+30, 30, 1280-834-2*30, 500)
 mpf = round(1000/60) # 16.6666 ~ 17 t->msへの変換に使う
 beat_t = Tuple[int, int, int, int]
@@ -228,6 +230,7 @@ class MyController: # joystick対応を視野に入れてclass化
             shot =keys[pg.K_z],
             esc  =keys[pg.K_ESCAPE],
             retry=keys[pg.K_r],
+            item =keys[pg.K_c],
         )
 
 class Interpolation:
@@ -414,10 +417,10 @@ class CircleBullet(AbstractBullet):
         pg.draw.circle(screen, cl.white, self.pos, self.radius+self.border)
         pg.draw.circle(screen, self.color, self.pos, self.radius+self.border, self.border)
 class SmallCircleBullet(CircleBullet):
-    def __init__(self, pos, color):
+    def __init__(self, pos, color=cl.red):
         super().__init__(pos=pos, radius=2, border=2, color=color)
 class MiddleCircleBullet(CircleBullet):
-    def __init__(self, pos, color):
+    def __init__(self, pos, color=cl.red):
         super().__init__(pos=pos, radius=10, border=4, color=color)
 class StraightBullet(MiddleCircleBullet):
     def __init__(self, pos, direction, speed=15, color=cl.red):
@@ -852,23 +855,38 @@ class LastSpellCard(AbstractSpellCard):
         MS = beat2ms((0, 2, 0, 0))
         self.y.pos = self.center + (0, 6*np.sin(2*np.pi*(ms/MS))-40)
         return self.lwind+self.rwind, [self.e, self.y]
+class HiddenCommandSpellCard(AbstractSpellCard):
+    """「幸せになれる隠しコマンド」"""
+    def __init__(self, t, ms, beats, game_step):
+        super().__init__(t, ms, beats, game_step)
+        Q = 0.7071067811865475244008
+        TELEPORT = 30
+                    #1234123412341234
+        self.notes = "msummsmmuusshmhm"*3
+        self.m = MiddleCircleBullet( PLAYAREA_CENTER+(+1*TELEPORT, +0*TELEPORT) )
+        self.h = MiddleCircleBullet( PLAYAREA_CENTER+(-1*TELEPORT, +0*TELEPORT) )
+        self.u = MiddleCircleBullet( PLAYAREA_CENTER+(+0*TELEPORT, -1*TELEPORT) )
+        self.s = MiddleCircleBullet( PLAYAREA_CENTER+(+0*TELEPORT, +1*TELEPORT) )
+        self.L = MiddleCircleBullet( PLAYAREA_CENTER+(-Q*TELEPORT, -Q*TELEPORT) )
+        self.R = MiddleCircleBullet( PLAYAREA_CENTER+(+Q*TELEPORT, -Q*TELEPORT) )
+        self.l = MiddleCircleBullet( PLAYAREA_CENTER+(-Q*TELEPORT, +Q*TELEPORT) )
+        self.r = MiddleCircleBullet( PLAYAREA_CENTER+(+Q*TELEPORT, +Q*TELEPORT) )
+        self.game_step.reimu.pos = PLAYAREA_CENTER.copy()
+    def release(self, t, ms, beats):
+        if beats.ignite(None, None, None, None):
+            self.game_step.reimu.pos = PLAYAREA_CENTER.copy()
+        for i, x in enumerate(self.notes):
+            if beat2count(beats[0]) == beat2count((2,0,1,0))+i:
+                tmp = {getattr(self, y) for y in "mhusLRlr"}
+                tmp.discard(getattr(self, x))
+                return tmp, []
+        if beats.ignite(None, None, None, None):
+            self.game_step.reimu.pos = PLAYAREA_CENTER.copy()
+        return {getattr(self, x) for x in "mhusLRlr"}, []
 
 ################ ?TI タイムスケジュール ################
 TIME_SCHEDULE = Dict({k:v for k, v in {
-    (0,0,0,0): OneSpellCard,#開始
-    (0,0,1,0): None,#間奏0
-    (0,0,3,0): GalaxySpellCard,#Aメロ1「闇の中 光る星」
-    (0,0,3,1): None,#Bメロ1「飛んでゆけばいつかは」
-    (0,0,2,2): Hata3SpellCard,#1サビ「過去なら 捨ててゆけ」
-    (0,0,0,3): None,#間奏2
-    (0,0,2,3): OutOfSightSpellCard,#Aメロ2「雲を抜け 見える敵」
-    (0,0,2,4): ExpansionSpellCard,#Bメロ2「避けてゆけばいつかは」
-    (0,0,1,5): FlipSpellCard,#2サビ「現在なら 変えられる」
-    (0,0,1,6): AmeSpellCard,#間奏3(ドロップ)
-    (0,0,3,6): Hata1SpellCard,#3サビ「なんども あきらめた」(転調)
-    (0,0,1,7): None,#4サビ「最後は、ふり絞れ」(間を置かず)
-    (0,0,3,7): LastSpellCard,#間奏4(落ち着く)
-    (0,0,1,8): None,#5サビ(ラスト)「まだ見ぬ 未来なら」
+    (0,0,0,0): HiddenCommandSpellCard,#開始
 }.items() if v is not None})
 
 
@@ -1066,7 +1084,7 @@ class MainLoop:
 
     def restart_game(self) -> None:
         self.current_step = GameStep
-        pg.mixer.music.load("data/ENISHI.ogg")
+        pg.mixer.music.load("data/幸せになれる隠しコマンドがあるらしい.ogg")
         pg.mixer.music.stop()
         pg.mixer.music.rewind()
         pg.mixer.music.play(-1, CONFIG["ms"]/1000)
