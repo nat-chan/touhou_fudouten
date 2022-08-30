@@ -511,14 +511,14 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
     def __init__(self, t, ms, beats, game_step):
         super().__init__(t, ms, beats, game_step)
         self.params = [pr.くるくる,pr.たちきの,pr.ひしがた,pr.はっぱや]
+        self.offset = [-400, -150]
         self.T = round(len(self.params)/(BPM/(60*1000)))
         r = self.intp(0)
         self.bullets = [SmallCircleBullet(xy, rgb)for xy, rgb in zip(*self.hata_xyrgbs(r))]
         game_step.reimu.pos = PLAYAREA_CENTER.copy()
         self.game_step.reimu.controllable = False
         self.controllable_beat = count2beat(beat2count(beats[0])+2)
-    @staticmethod
-    def hata_xyrgbs(p: np.ndarray, calc_rgb=True) -> Tuple[List[Tuple[int,int]], Optional[List[Tuple[int,int,int]]]]:
+    def hata_xyrgbs(self, p: np.ndarray, calc_rgb=True) -> Tuple[List[Tuple[int,int]], Optional[List[Tuple[int,int,int]]]]:
         """パラメタpの畑写像から座標と色を返す"""
         zs = hatafast(p)
         xys = list()
@@ -526,8 +526,8 @@ class Hata1SpellCard(AbstractSpellCard): #左右に小回りして避ける
         for i, z in enumerate(zs):
             if calc_rgb: rgb = hsv2rgb(i/len(zs), 1, 1)
             xy = z2xy(z)
-            X = 2*np.array([-400+220*i for i in range(3)])
-            Y = 2*np.array(([-150+110*i for i in range(4)]))
+            X = 2*np.array([self.offset[0]+220*i for i in range(3)])
+            Y = 2*np.array(([self.offset[1]+110*i for i in range(4)]))
             for x in X:
                 for y in Y:
                     _xy = (xy[0]+x, xy[1]+y)
@@ -562,7 +562,7 @@ class Hata3SpellCard(Hata1SpellCard): #難しい、小刻みに右斜め下に�
     """相似「龍の霊廟」"""
     def __init__(self, t, ms, beats, game_step):
         super().__init__(t, ms, beats, game_step)
-        self.params = [pr.ひびわれ,pr.みつびし,pr.ドラゴン,pr.くろすい]
+        self.params = [pr.みつびし,pr.ドラゴン,pr.くろすい,pr.ひびわれ]
 
 class ExpansionSpellCard(AbstractSpellCard):
     """「膨張する時空間異常」"""
