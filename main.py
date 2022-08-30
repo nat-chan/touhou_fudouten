@@ -195,7 +195,9 @@ def square_dist(a, b):
 
 def check_hit(a, b) -> bool:
     """被弾判定、東方は円どうしの交点が直交するまで重なるが特に考慮せずに通常の判定"""
-    return square_dist(a, b) < (a.radius+b.radius)**2
+    retval = square_dist(a, b) < (a.radius+b.radius)**2
+#    print(type(b.pos), b.pos)
+    return retval
 
 def r() -> float: return 2*np.pi*random()
 
@@ -860,29 +862,41 @@ class HiddenCommandSpellCard(AbstractSpellCard):
     def __init__(self, t, ms, beats, game_step):
         super().__init__(t, ms, beats, game_step)
         Q = 0.7071067811865475244008
-        TELEPORT = 30
-                    #1234123412341234
-        self.notes = "msummsmmuusshmhm"*3
-        self.m = MiddleCircleBullet( PLAYAREA_CENTER+(+1*TELEPORT, +0*TELEPORT) )
-        self.h = MiddleCircleBullet( PLAYAREA_CENTER+(-1*TELEPORT, +0*TELEPORT) )
-        self.u = MiddleCircleBullet( PLAYAREA_CENTER+(+0*TELEPORT, -1*TELEPORT) )
-        self.s = MiddleCircleBullet( PLAYAREA_CENTER+(+0*TELEPORT, +1*TELEPORT) )
-        self.L = MiddleCircleBullet( PLAYAREA_CENTER+(-Q*TELEPORT, -Q*TELEPORT) )
-        self.R = MiddleCircleBullet( PLAYAREA_CENTER+(+Q*TELEPORT, -Q*TELEPORT) )
-        self.l = MiddleCircleBullet( PLAYAREA_CENTER+(-Q*TELEPORT, +Q*TELEPORT) )
-        self.r = MiddleCircleBullet( PLAYAREA_CENTER+(+Q*TELEPORT, +Q*TELEPORT) )
+        self.K = 30
+        #             1234123412341234
+        self.notes = "msummsmmuusshmhm"*2+"msummsmmuuss"
+        self.m = np.array([+1*self.K, +0*self.K])
+        self.h = np.array([-1*self.K, +0*self.K])
+        self.u = np.array([+0*self.K, -1*self.K])
+        self.s = np.array([+0*self.K, +1*self.K])
+        self.L = np.array([-Q*self.K, -Q*self.K])
+        self.R = np.array([+Q*self.K, -Q*self.K])
+        self.l = np.array([-Q*self.K, +Q*self.K])
+        self.r = np.array([+Q*self.K, +Q*self.K])
         self.game_step.reimu.pos = PLAYAREA_CENTER.copy()
+        self.bullets = set()
+        self.first_count = beat2count((2,0,1,0))
+        for i, x in enumerate(self.notes):
+            end_beat   = count2beat(self.first_count+i)
+            start_beat = count2beat(self.first_count+i-4)
+            for y in "mhusLRlr":
+                if x == y: continue
+                end_pos = PLAYAREA_CENTER + 0.45*getattr(self, y)
+                start_pos = PLAYAREA_CENTER + 10*getattr(self, y)
+                bullet = MiddleCircleBullet(start_pos)
+#                bullet.radius=15
+                bullet.intp = Interpolation(start_beat, end_beat, start_pos, end_pos)
+                self.bullets.add(bullet)
     def release(self, t, ms, beats):
         if beats.ignite(None, None, None, None):
             self.game_step.reimu.pos = PLAYAREA_CENTER.copy()
-        for i, x in enumerate(self.notes):
-            if beat2count(beats[0]) == beat2count((2,0,1,0))+i:
-                tmp = {getattr(self, y) for y in "mhusLRlr"}
-                tmp.discard(getattr(self, x))
-                return tmp, []
-        if beats.ignite(None, None, None, None):
-            self.game_step.reimu.pos = PLAYAREA_CENTER.copy()
-        return {getattr(self, x) for x in "mhusLRlr"}, []
+        tmp_bullets = set()
+        for b in self.bullets:
+            b.pos = b.intp(ms)
+            if not b.intp.end_ms < ms:
+                tmp_bullets.add(b)
+        self.bullets = tmp_bullets
+        return self.bullets, []
 
 ################ ?TI タイムスケジュール ################
 TIME_SCHEDULE = Dict({k:v for k, v in {
@@ -958,7 +972,7 @@ class GameStep(AbstractStep):
             target.draw(self.screen_playarea)
         is_hit = False
         for bullet in bullets:
-            if check_hit(self.reimu, bullet) and not CONFIG["invincible"]:
+            if check_hit(self.reimu, bullet):
                 is_hit = True; break
         self.reimu.update(t, ms, controller_input, is_hit)
         self.reimu.draw_lower(t, ms, self.screen_playarea)
