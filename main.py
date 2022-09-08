@@ -1,8 +1,8 @@
-import pygame as pg; from pygame.locals import *
+import pygame as pg; from pygame.locals import QUIT
 import numpy as np
 from addict import Dict as addict_dict
 import colorsys
-from typing import *
+from typing import Any, List, Optional, Tuple
 import sys
 import math
 import argparse
@@ -215,7 +215,7 @@ class Beats(list):
         return self[0] != self[1] and self.wildcard_equal(self[0], beat)
 
 class MyController: # joystick対応を視野に入れてclass化
-    def check_input(self) -> Dict:
+    def check_input(self) -> Dict: # TODO: immutableでよいのでNamedTupleでよいかも
         """ユーザの現在の入力を返す"""
         keys = pg.key.get_pressed()
         return Dict(
