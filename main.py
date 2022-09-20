@@ -13,6 +13,7 @@ class Dict(addict_dict):
     def at(self, k: int) -> Any:
         return self[list(self.keys())[k]]
 
+CONFIG = Dict()
 LEVEL = [4, 7, 10]
 CONFIG = Dict()
 BPM = 190
@@ -51,12 +52,14 @@ pr = Dict(
 class se: #se用の名前空間
     @classmethod
     def load(se):
-        se.cancel00 = pg.mixer.Sound("data/se_cancel00.wav")
-        se.ok00 = pg.mixer.Sound("data/se_ok00.wav")
-        se.slash = pg.mixer.Sound("data/se_slash.wav")
-        se.pldead00 = pg.mixer.Sound("data/se_pldead00.wav")
-        se.invalid = pg.mixer.Sound("data/se_invalid.wav")
-        se.extend = pg.mixer.Sound("data/se_extend.wav")
+        se.ok00 = pg.mixer.Sound("data/se3/決定ボタンを押す12.wav") # XXX
+#        se.cursor = pg.mixer.Sound("data/se3/カーソル移動7.wav") # XXX # TODO
+        se.cursor = pg.mixer.Sound("data/se3/決定ボタンを押す45.wav") # XXX
+        se.cancel00 = pg.mixer.Sound("data/se3/キャンセル5.wav") # XXX
+#        se.slash = pg.mixer.Sound("data/se/seSuperNaturalBorder1.wav")
+        se.slash = pg.mixer.Sound("data/se/seBomb_ReimuB.wav") # XXX
+        se.pldead00 = pg.mixer.Sound("data/se/sePlayerCollision.wav") # XXX
+        se.invalid = pg.mixer.Sound("data/se3/ビープ音4.wav") # XXX
 
 class sp: #sprite用の名前空間
     @classmethod
@@ -957,7 +960,10 @@ class GameStep(AbstractStep):
         self.info.print(f"{self.reimu.bomb_stock}{'★'*self.reimu.bomb_stock}", color=cl.green)
         self.info.print(f"fps:{self.clock.get_fps():.2f}")
         self.info.print(f"弾数: {len(bullets)}")
-        self.info.print(f"■□♡♥☆★こんにちわ世界")
+        self.info.print(f"") #無,上,下,右,左,上下,左右
+        self.info.print(f"") #無,上,下,右,左,上下,左右
+        self.info.print(f"")    #下,右,左,上
+        self.info.print(f"")  #ABXYLR
         self.info.print(f"{ms}")
         self.info.print(f"{self.beats[0]}")
         for s in beat2squares(self.beats[0]):
@@ -1090,7 +1096,7 @@ class MainLoop:
         pg.mixer.music.rewind()
         pg.mixer.music.play(loops=-1)
         self.config_step = ConfigStep(self.screen_display, self.clock)
-        se.extend.play()
+        se.ok00.play()
 
     def main(self) -> None:
         self.game_step = GameStep(self.screen_display, self.clock)
@@ -1139,10 +1145,10 @@ class MainLoop:
                         if event.key == pg.K_LEFT:
                             CONFIG["bomb_stock"] -= 1
                             if CONFIG["bomb_stock"] < 0: CONFIG["bomb_stock"] = 0
-                            se.ok00.play()
+                            se.cursor.play()
                         if event.key == pg.K_RIGHT:
                             CONFIG["bomb_stock"] += 1
-                            se.ok00.play()
+                            se.cursor.play()
                         if event.key == pg.K_UP:
                             self.config_step.skip = (self.config_step.skip-1)%len(TIME_SCHEDULE)
                         if event.key == pg.K_DOWN:
@@ -1152,19 +1158,19 @@ class MainLoop:
                                 if i == self.config_step.skip:
                                     CONFIG["beat"] = k
                                     CONFIG["ms"] = math.ceil(beat2ms(CONFIG["beat"]))
-                            se.ok00.play()
+                            se.cursor.play()
             self.t += 1
-
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--beat', type=str, default="0000")
     parser.add_argument('--bomb_stock', type=int, default=9)
     parser.add_argument('--invincible', type=bool, default=False)
-    CONFIG = Dict(parser.parse_args().__dict__)
+    CONFIG.update(parser.parse_args().__dict__)
     CONFIG["bomb_stock"] = CONFIG.bomb_stock
     CONFIG["beat"] = tuple(map(int, CONFIG.beat))
     CONFIG["ms"] = math.ceil(beat2ms(CONFIG["beat"]))
-    print(CONFIG["beat"], CONFIG["ms"], ms2beat(CONFIG["ms"]), ms2beat(math.floor(CONFIG["ms"])), ms2beat(math.ceil(CONFIG["ms"])), ms2beat(round(CONFIG["ms"])))
-    assert CONFIG["beat"] == ms2beat(CONFIG["ms"])
     main_loop = MainLoop()
     main_loop.main()
+
+if __name__ == "__main__":
+    main()
