@@ -1,0 +1,5 @@
+pygame
+numpy
+addict
+colorsys
+pyinstaller # dev
