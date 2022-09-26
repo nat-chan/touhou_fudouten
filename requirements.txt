@@ -3,3 +3,5 @@ numpy
 addict
 colorsys
 pyinstaller # dev
+# pyglfw openglのwrapperのGLFWで書き直す時用
+# https://github.com/glfw/glfw
